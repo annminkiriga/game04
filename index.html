@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Magic Path Puzzle</title>
+  <style>
+    :root {
+      --cell-size: 38px; --gap: 2px;
+      --screen-width: 375px; --screen-height: 667px;
+      --primary-color: #0f0;
+    }
+
+    /* --- body の上書き --- */
+    body {
+      margin: 0; 
+      padding: 0; 
+      display: flex; 
+      justify-content: center; 
+      align-items: center; 
+      height: 100vh; 
+      background-color: #000; /* 隙間は真っ黒に */
+      color: white; 
+      font-family: sans-serif; 
+      
+      /* スマホ特有の挙動（揺れ・ズーム）を徹底ガード */
+      overflow: hidden; 
+      position: fixed; /* 画面を固定してバウンド防止 */
+      width: 100%;
+      overscroll-behavior: none; /* スクロールの跳ね返りを禁止 */
+      touch-action: none; /* ブラウザのズーム・パンを無効化 */
+
+      user-select: none; 
+      -webkit-user-select: none;
+      touch-action: none; /* ★重要：ブラウザ独自のズームやパンを一切禁止する */
+      -webkit-text-size-adjust: none; /* 文字サイズが勝手に変わるのを防ぐ */
+    }
+
+    /* --- #mobile-frame の上書き --- */
+    #mobile-frame {
+      width: var(--screen-width); 
+      height: var(--screen-height);
+      background-color: #1a1a1a; 
+      display: flex; 
+      flex-direction: column; 
+      position: relative; 
+      border-radius: 20px; 
+      overflow: hidden; 
+      border: 2px solid #444;
+      box-shadow: 0 0 50px rgba(0,0,0,0.8), 0 0 0 10px #333;
+
+      /* JavaScriptでの縮小時、形が崩れないように保護 */
+      flex-shrink: 0;
+      /* iPhoneなどの長押しメニューを禁止 */
+      -webkit-touch-callout: none;
+    }
+
+    /* --- ついでにここも追加しておくと、タップの反応が良くなります --- */
+    .magic-btn, .menu-btn, .arrow, .cell {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent; /* タップ時の青い枠を消す */
+    }
+
+    #game-view { 
+      flex: 3; display: flex; flex-direction: column; 
+      justify-content: center; align-items: center; 
+      position: relative; 
+    }
+
+    #game-container {
+      position: relative; display: grid; 
+      grid-template-columns: repeat(9, var(--cell-size));
+      grid-template-rows: repeat(9, var(--cell-size)); 
+      gap: var(--gap); background-color: #444; /* 漆黒(#000)ではなく、深いグレーにする */
+      border: 2px solid #555; padding: 2px;
+    }
+
+    /* 元の .cell をこれに書き換え */
+.cell { 
+  width: var(--cell-size); 
+  height: var(--cell-size); 
+  background-color: #444; /* 明るめのグレーに変更（未踏の地） */
+  border: 1px solid #555; /* 格子を少し見えやすく */
+  box-sizing: border-box;
+}
+
+/* 元の .cell.passed をこれに書き換え */
+.cell.passed { 
+  background-color: #003344 !important; /* 深い青緑 */
+  box-shadow: inset 0 0 10px rgba(0, 255, 255, 0.4); /* 水色の光 */
+  border: 1px solid #005566;
+}
+
+/* プレイヤーを最前面に出し、さらに目立たせる（もしあれば） */
+#player {
+  z-index: 10; /* 常にマスの色より上に表示 */
+  filter: drop-shadow(0 0 5px #fff); /* プレイヤー自体を少し光らせる */
+}
+
+/* ★ ここから魔法エフェクトのコードを貼り付け ★ */
+
+.magic-explosion {
+  position: absolute;
+  width: var(--cell-size); /* 変数に合わせるとより正確です */
+  height: var(--cell-size);
+  background-color: transparent;
+  border: 2px solid #00ffff;
+  border-radius: 50%;
+  box-sizing: border-box;
+  z-index: 20;
+  pointer-events: none;
+  animation: magic-crest 0.6s ease-out forwards;
+}
+
+.magic-explosion::after {
+  content: '';
+  position: absolute;
+  top: 25%; left: 25%; width: 50%; height: 50%;
+  background-color: #fff;
+  border-radius: 50%;
+  filter: blur(2px);
+}
+
+@keyframes magic-crest {
+  0% { transform: scale(0.1) rotate(0deg); opacity: 1; border-color: #fff; }
+  50% { transform: scale(1.2) rotate(180deg); opacity: 0.8; border-color: #00ffff; }
+  100% { transform: scale(1.5) rotate(360deg); opacity: 0; border-color: #0000aa; }
+}
+
+.magic-particle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background-color: #00ffff;
+  border-radius: 50%;
+  filter: drop-shadow(0 0 3px #fff);
+  z-index: 21;
+  pointer-events: none;
+  animation: magic-particle-fly 0.5s ease-out forwards;
+}
+
+@keyframes magic-particle-fly {
+  0% { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+}
+
+/* ★ ここまで貼り付け ★ */
+
+    /* --- メニュー画面 --- */
+    .overlay-screen {
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      width: 100%; 
+      height: 100%;
+      background: rgba(0,0,0,0.9); 
+      
+      /* 2000から3000に強化（他の要素に邪魔させない） */
+      z-index: 3000; 
+      
+      display: flex; 
+      flex-direction: column; 
+      justify-content: center; 
+      align-items: center;
+
+      /* タップ・クリックを確実に受け取れるように明示 */
+      pointer-events: auto; 
+    }
+
+    /* ゲームオーバー画面はさらに強調（色と重なり） */
+    #game-over-menu {
+      background: rgba(50, 0, 0, 0.95) !important;
+      z-index: 3100;
+    }
+    .title-logo { 
+      font-size: 3rem; font-weight: bold; color: #fff; 
+      text-shadow: 0 0 15px var(--primary-color); 
+      margin-bottom: 60px; font-family: serif;
+    }
+    .blink-text { animation: blink 1.5s infinite; color: #aaa; font-size: 0.9rem; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    .select-controls { display: flex; align-items: center; margin-bottom: 40px; gap: 25px; }
+    .arrow { cursor: pointer; padding: 10px; color: var(--primary-color); font-size: 1.5rem; }
+    .arrow.disabled { opacity: 0.1; cursor: default; }
+    .menu-btn { 
+      width: 180px; padding: 15px; margin: 10px; background: #111; 
+      border: 1px solid #555; color: #fff; cursor: pointer; 
+    }
+    .menu-btn.secondary { font-size: 0.7rem; color: #666; margin-top: 20px; }
+
+    /* --- プレイヤー演出 --- */
+    #player {
+      position: absolute; width: calc(var(--cell-size) * 0.9); 
+      height: calc(var(--cell-size) * 0.9); z-index: 10;
+      transition: left 0.3s linear, top 0.3s linear;
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><path fill="white" d="M259.3 17.8L194 150.2 47.9 171.5c-26.2 3.8-36.7 36.1-17.7 54.6l105.7 103-25 145.5c-4.5 26.3 23.2 46 46.4 33.7L288 439.6l130.7 68.7c23.2 12.2 50.9-7.4 46.4-33.7l-25-145.5 105.7-103c19-18.5 8.5-50.8-17.7-54.6L382 150.2 316.7 17.8c-11.7-23.6-45.6-23.9-57.4 0z"/></svg>');
+      background-size: contain; background-repeat: no-repeat;
+      pointer-events: none;
+      z-index: 110; /* 敵よりさらに手前に */
+    }
+    #player.invincible { opacity: 0.6; filter: brightness(0.5); transform: scale(0.9); }
+    #player.active { filter: brightness(0) invert(1) drop-shadow(0 0 5px #fff); animation: walking 0.15s infinite alternate linear; }
+    .player-die { animation: player-die-anim 1.0s ease-in forwards !important; }
+    @keyframes player-die-anim {
+      0% { transform: scale(1) rotate(0); opacity: 1; }
+      100% { transform: scale(2, 0.1) rotate(720deg); opacity: 0; }
+    }
+    .die-particle { 
+      position: absolute; width: 4px; height: 12px; background: #fff; 
+      animation: particle-fly 0.6s ease-out forwards; 
+    }
+    @keyframes particle-fly {
+      0% { transform: translate(-50%,-50%) rotate(var(--rot)) translateY(0); opacity: 1; }
+      100% { transform: translate(-50%,-50%) rotate(var(--rot)) translateY(-60px); opacity: 0; }
+    }
+
+    /* --- 敵演出 --- */
+    #enemy {
+      position: absolute; 
+      width: var(--cell-size); 
+      height: var(--cell-size);
+      display: flex; 
+      justify-content: center; 
+      align-items: center;
+      font-size: 32px; 
+      color: #ff4444; 
+      text-shadow: 0 0 10px #f00; 
+      animation: unyo-unyo 2s infinite alternate;
+      transition: left 0.3s linear, top 0.3s linear;
+
+      /* ★ここを追加：タップを透過させて下のセルに届かせる */
+      pointer-events: none; 
+
+      /* ★ここを 9 から 100 くらいに上げておくと、セルより手前に見えます */
+      z-index: 100; 
+    }
+    .enemy-die { animation: enemy-die-anim 0.6s ease-in forwards !important; }
+    @keyframes enemy-die-anim {
+      0% { transform: scale(1); filter: brightness(1); }
+      100% { transform: scale(0) rotate(1440deg); opacity: 0; }
+    }
+    .enemy-particle { 
+      position: absolute; width: 6px; height: 6px; background: #f44; 
+      animation: enemy-particle-anim 0.5s ease-out forwards; 
+    }
+    @keyframes enemy-particle-anim {
+      100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+    }
+
+    /* --- 魔法・クリア演出 --- */
+    .explosion { 
+      position: absolute; width: var(--cell-size); height: var(--cell-size);
+      background: radial-gradient(circle, #ff0, #f00, transparent);
+      border-radius: 50%; z-index: 20; animation: explode-ani 0.4s forwards;
+    }
+    @keyframes explode-ani {
+      0% { transform: scale(0); opacity: 1; }
+      100% { transform: scale(2); opacity: 0; }
+    }
+    .clear-message {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      font-size: 64px; font-weight: bold; color: #fff; z-index: 1000;
+      text-shadow: 0 0 20px #ff0; animation: clear-anim 0.8s forwards;
+    }
+    @keyframes clear-anim { 0% { transform: translate(-50%,-50%) scale(0); } 100% { transform: translate(-50%,-50%) scale(1); } }
+    @keyframes unyo-unyo { 0% { transform: scale(1.1, 0.8); } 100% { transform: scale(0.8, 1.2); } }
+    @keyframes walking { 0% { transform: rotate(-15deg); } 100% { transform: rotate(15deg); } }
+
+    /* その他UI */
+    .separator { height: 6px; background: #444; width: 100%; }
+    #control-panel { flex: 2; background: #252525; display: flex; flex-direction: column; align-items: center; padding: 15px; }
+    .status-display { width: 85%; background: #000; padding: 12px; color: var(--primary-color); border-left: 4px solid var(--primary-color); font-family: monospace; margin-bottom: 10px; }
+    .magic-btn { width: 70px; height: 70px; border-radius: 50%; background: #333; border: 4px solid #555; color: #888; display: flex; justify-content: center; align-items: center; opacity: 0.3; transition: 0.3s; }
+    .magic-btn.active { opacity: 1; background: radial-gradient(#f00, #500); color: #fff; border-color: #f88; box-shadow: 0 0 20px #f00; }
+    .tap-effect { position: absolute; width: 40px; height: 40px; border: 2px solid #fff; border-radius: 50%; animation: tap-ripple 0.5s forwards; }
+    @keyframes tap-ripple { 0% { transform: scale(0.2); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+  </style>
+</head>
+<body>
+  <div id="mobile-frame">
+    <div id="game-view">
+      <h1 style="font-size: 1.2rem; margin: 10px 0;">MAGIC PATH</h1>
+      
+      <div id="game-container">
+  <div id="title-screen" class="overlay-screen">
+    <div class="title-logo">Ｃｏｒｄ</div>
+
+    <div class="game-instructions" style="margin: 20px 0; line-height: 1.8; color: #fff; font-size: 16px; text-shadow: 2px 2px 2px #000;">
+      <p>止まっていれば無敵！</p>
+      <p>たどった道に魔法を発動！</p>
+      <p>画面内の敵を全滅させろ！</p>
+    </div>
+    <div class="blink-text">Please tap the screen</div>
+  </div>
+
+        <div id="select-screen" class="overlay-screen" style="display: none;">
+          <div class="select-controls">
+            <span id="prev-lv" class="arrow">◁</span>
+            <span id="level-display">LV 001</span>
+            <span id="next-lv" class="arrow">▹</span>
+          </div>
+          <div id="start-btn" class="menu-btn">スタート</div>
+          <div id="back-to-title" class="menu-btn secondary">タイトル画面へ</div>
+        </div>
+
+        <div id="clear-menu" class="overlay-screen" style="display: none; background: rgba(0,0,0,0.85);">
+          <div style="color: #fff; font-size: 1.8rem; margin-bottom: 30px; text-shadow: 0 0 10px #ff0; font-weight: bold;">
+            STAGE CLEAR!
+          </div>
+          <div id="next-stage-btn" class="menu-btn" style="border-color: #ff0; color: #ff0;">次のステージへ</div>
+          <div id="back-to-select-btn" class="menu-btn secondary">ステージ選択へ</div>
+        </div>
+
+        <div id="game-over-menu" class="overlay-screen" style="display: none; background: rgba(50,0,0,0.9);">
+          <div style="color: #f44; font-size: 1.8rem; margin-bottom: 30px; text-shadow: 0 0 10px #f00; font-weight: bold;">
+            GAME OVER
+          </div>
+          <div id="retry-btn" class="menu-btn" style="border-color: #f44; color: #f44;">リトライ</div>
+          <div id="back-to-select-from-over" class="menu-btn secondary">ステージ選択へ</div>
+        </div>
+      </div> </div> <div class="separator"></div>
+
+    <div id="control-panel">
+      <div class="status-display" id="status">> READY...</div>
+      <div class="magic-btn">魔法</div>
+      <div style="font-size: 0.7rem; color: #666; margin-top: 5px;">TAP GRID TO MOVE</div>
+    </div>
+  </div> <script src="js/stage.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/enemy.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
