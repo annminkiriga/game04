@@ -500,14 +500,17 @@ class Game {
     for (let i = 0; i < this.pathHistory.length; i++) {
       const pos = this.pathHistory[i];
       this.stage.showExplosion(pos.x, pos.y);
-      window.app.playSE('maou_se_magic_fire11.wav');
 
-      // 当たり判定チェック
+      // ★ 音の再生を 4回に1回 に制限（ここを書き換え）
+      if (i % 4 === 0) {
+        window.app.playSE('maou_se_magic_fire11.wav');
+      }
+
+      // 当たり判定チェック（ここは変更なし）
       this.enemies.forEach(enemy => {
         if (enemy.isAlive) {
           const eGrid = enemy.getGridPos();
           if (pos.x === eGrid.x && pos.y === eGrid.y) {
-            // 当たった敵をリストに入れ、重複しないようにする
             if (!defeatedEnemies.includes(enemy)) {
               defeatedEnemies.push(enemy);
             }
