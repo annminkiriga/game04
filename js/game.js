@@ -12,6 +12,23 @@ class App {
     this.currentSelectLevel = this.maxClearedLevel;
     this.soundPath = 'sounds/'; 
 
+    // --- SEの事前読み込み（倉庫） ---
+    this.seCache = {};
+    const seFiles = [
+      'maou_se_magic_fire11.wav',
+      'maou_se_system19.wav',
+      'maou_se_jingle12.wav',
+      'maou_se_magic_ice04.wav',
+      'maou_se_system10.wav'
+      // 他に使っているSEがあればここに追加
+    ];
+
+    seFiles.forEach(file => {
+      const audio = new Audio(`${this.soundPath}${file}`);
+      audio.preload = 'auto'; // 事前読み込みを指示
+      this.seCache[file] = audio;
+    });
+
     // --- BGMの準備（個別に作成） ---
     try {
       this.menuBGM = new Audio(`${this.soundPath}maou_bgm_cyber45.mp3`);
@@ -62,11 +79,22 @@ class App {
     }
   }
 
-  // ★ここに差し込みます！★
+  // ★ 改造版 playSE ★
   playSE(filename) {
-    const se = new Audio(`${this.soundPath}${filename}`);
-    se.volume = 0.5; // 効果音の音量（お好みで）
-    se.play().catch(e => {}); // 連続再生時のエラー防止
+    const se = this.seCache[filename];
+    
+    if (se) {
+      // 連続で鳴らすために、再生位置を0に戻してから再生する
+      se.pause();
+      se.currentTime = 0;
+      se.volume = 0.5;
+      se.play().catch(e => {});
+    } else {
+      // もし倉庫にない音が指定された場合のみ、新しく作る（予備動作）
+      const newSe = new Audio(`${this.soundPath}${filename}`);
+      newSe.volume = 0.5;
+      newSe.play().catch(e => {});
+    }
   }
 
   init() {
