@@ -489,59 +489,49 @@ class Game {
   async castMagic() {
     if (this.isMoving || this.isMagicCasting || this.isGameOver || this.pathHistory.length < 2) return;
     this.isMagicCasting = true;
-    this.magicBtn.classList.remove('active', 'disabled');
     this.magicBtn.classList.add('disabled');
     this.player.classList.replace('invincible', 'active');
-    this.updateUI("> MAGIC ACTIVATED!!", "#ff0");
+    
+    let defeatedEnemies = [];
 
-    let defeatedEnemies = []; // 今回の魔法で当たった敵をメモするリスト
-
-    // 1. 連鎖爆発フェーズ（ここではまだ敵は消えない）
+    // 1. 連鎖爆発フェーズ
     for (let i = 0; i < this.pathHistory.length; i++) {
       const pos = this.pathHistory[i];
-      this.stage.showExplosion(pos.x, pos.y);
-
-      // ★ 音の再生を 4回に1回 に制限（ここを書き換え）
-      if (i % 4 === 0) {
-        window.app.playSE('maou_se_magic_fire11.wav');
+      
+      // 【軽量化ポイント：エフェクトの即時破棄】
+      const explosion = this.stage.showExplosion(pos.x, pos.y);
+      if (explosion) {
+        // 500ms（アニメ終了後）に物理的にDOMから削除してメモリを解放する
+        setTimeout(() => explosion.remove(), 500);
       }
 
-      // 当たり判定チェック（ここは変更なし）
+      if (i % 4 === 0) window.app.playSE('maou_se_magic_fire11.wav');
+
       this.enemies.forEach(enemy => {
         if (enemy.isAlive) {
           const eGrid = enemy.getGridPos();
-          if (pos.x === eGrid.x && pos.y === eGrid.y) {
-            if (!defeatedEnemies.includes(enemy)) {
-              defeatedEnemies.push(enemy);
-            }
+          if (pos.x === eGrid.x && pos.y === eGrid.y && !defeatedEnemies.includes(enemy)) {
+            defeatedEnemies.push(enemy);
           }
         }
       });
 
       this.stage.clearTile(pos.x, pos.y);
-      await new Promise(r => setTimeout(r, 100)); // 爆発の間隔
+      await new Promise(r => setTimeout(r, 60)); // ← 100msから60msに短縮（テンポアップ）
     }
 
-    // 2. 撃破フェーズ（全ての爆発が終わった後に実行）
+    // 2. 撃破フェーズ
     if (defeatedEnemies.length > 0) {
-      // 少しだけ「タメ」を作る（お好みで 200〜500ms）
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 200));
+      defeatedEnemies.forEach(enemy => enemy.die());
 
-      defeatedEnemies.forEach(enemy => {
-        enemy.die(); // ここで初めて消滅アニメーション開始
-      });
-
-      // 全滅チェック
-      const allDead = this.enemies.every(e => !e.isAlive);
-      if (allDead) {
-        this.updateUI("ALL ENEMIES DEFEATED!", "#ff0");
+      if (this.enemies.every(e => !e.isAlive)) {
         window.app.playSE('maou_se_system19.wav');
-        setTimeout(() => { this.gameClear(); }, 800);
+        setTimeout(() => { this.gameClear(); }, 500);
       } else {
         this.finalizeMagic();
       }
     } else {
-      // 誰にも当たらなかった場合
       this.finalizeMagic();
     }
   }
@@ -603,18 +593,5 @@ window.onload = () => {
     window.app = new App(); 
 };
 // ダブルタップによるズームをJavaScript側で強制停止
-let lastTouchEnd = 0;
-document.addEventListener('touchend', (e) => {
-  const now = (new Date()).getTime();
-  if (now - lastTouchEnd <= 300) {
-    e.preventDefault(); // 0.3秒以内の連続タップ（ダブルタップ）を無効化
-  }
-  lastTouchEnd = now;
-}, false);
 
 // 2本指でのピンチズームも禁止
-document.addEventListener('touchstart', (e) => {
-  if (e.touches.length > 1) {
-    e.preventDefault();
-  }
-}, { passive: false });
