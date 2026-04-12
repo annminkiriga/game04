@@ -43,7 +43,8 @@ if (typeof Stage === 'undefined') {
         // 指定座標を「通過済み（黄色）」状態にする
         // stage.js 内
 markAsPassed(x, y) {
-  const cell = this.container.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+  // querySelectorでの全検索をやめ、配列から直接取得
+  const cell = this.getCellElement(x, y);
   if (cell) {
     cell.classList.add('passed');
   }
@@ -51,10 +52,10 @@ markAsPassed(x, y) {
 
 // 魔法発動後にタイルを消去（元に戻す）するメソッド
 clearTile(x, y) {
-  const cell = this.container.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+  // こちらも同様に配列から取得
+  const cell = this.getCellElement(x, y);
   if (cell) {
     cell.classList.remove('passed');
-    // 完全に初期の色に戻す場合はこれだけでOK
   }
 }
 

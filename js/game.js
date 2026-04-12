@@ -10,39 +10,37 @@ class App {
     const savedLv = localStorage.getItem('mp_max_lv');
     this.maxClearedLevel = parseInt(savedLv) || 1;
     this.currentSelectLevel = this.maxClearedLevel;
+
+   // ★追加：全ステージ数を取得（GAME_LEVELS の要素数をカウント）
+    this.totalLevels = Object.keys(GAME_LEVELS).length;
+
     this.soundPath = 'sounds/'; 
 
-    // --- SEの事前読み込み（倉庫） ---
     this.seCache = {};
-    const seFiles = [
+    this.seFiles = [
       'maou_se_magic_fire11.wav',
       'maou_se_system19.wav',
-      'maou_se_jingle12.wav',
+      'maou_se_jingle12.wav', // もし 06 を使うならここを 06 に
+      'maou_se_jingle06.wav', // ★追加：これを忘れると鳴りません
       'maou_se_magic_ice04.wav',
-      'maou_se_system10.wav'
-      // 他に使っているSEがあればここに追加
+      'maou_se_system10.wav',
+      'maou_bgm_cyber30.mp3'
     ];
 
-    seFiles.forEach(file => {
-      const audio = new Audio(`${this.soundPath}${file}`);
-      audio.preload = 'auto'; // 事前読み込みを指示
-      this.seCache[file] = audio;
-    });
+    this.menuBGM = new Audio();
+    this.menuBGM.loop = true;
+    this.menuBGM.volume = 0.4;
 
-    // --- BGMの準備（個別に作成） ---
-    try {
-      this.menuBGM = new Audio(`${this.soundPath}maou_bgm_cyber45.mp3`);
-      this.menuBGM.loop = true;
-      this.menuBGM.volume = 0.4;
+    this.gameBGM = new Audio();
+    this.gameBGM.loop = true;
+    this.gameBGM.volume = 0.4;
 
-      this.gameBGM = new Audio(`${this.soundPath}maou_bgm_cyber41.mp3`);
-      this.gameBGM.loop = true;
-      this.gameBGM.volume = 0.4;
+    // ★追加：ボス専用BGMの定義
+    this.bossBGM = new Audio();
+    this.bossBGM.loop = true;
+    this.bossBGM.volume = 0.5; // ボスなので少し大きめに
 
-      this.currentBGM = null;
-    } catch (e) {
-      console.warn("BGM load error:", e);
-    }
+    this.currentBGM = null;
     
     this.titleScreen = document.getElementById('title-screen');
     this.selectScreen = document.getElementById('select-screen');
@@ -50,50 +48,91 @@ class App {
     this.clearMenu = document.getElementById('clear-menu');
     
     this.currentGame = null;
+
+    this.preloadAssets();
+  }
+
+  async preloadAssets() {
+    const blinkText = this.titleScreen.querySelector('.blink-text');
+    if (blinkText) blinkText.innerText = "Now Loading...";
+
+    const loadAudio = (audioObj, src) => {
+      return new Promise((resolve) => {
+        audioObj.src = src;
+        audioObj.preload = 'auto';
+        
+        if (audioObj.readyState >= 3) {
+          resolve();
+          return;
+        }
+
+        audioObj.addEventListener('canplaythrough', resolve, { once: true });
+        audioObj.addEventListener('error', (e) => {
+          console.warn("Audio load error:", src, e);
+          resolve(); 
+        }, { once: true });
+        
+        audioObj.load();
+      });
+    };
+
+    const loadPromises = [];
+
+    loadPromises.push(loadAudio(this.menuBGM, `${this.soundPath}maou_bgm_cyber45.mp3`));
+    loadPromises.push(loadAudio(this.gameBGM, `${this.soundPath}maou_bgm_cyber41.mp3`));
+    // ★追加：ボスBGMのロード
+    loadPromises.push(loadAudio(this.bossBGM, `${this.soundPath}maou_bgm_cyber30.mp3`));
+
+    this.seFiles.forEach(file => {
+      const audio = new Audio();
+      this.seCache[file] = audio;
+      loadPromises.push(loadAudio(audio, `${this.soundPath}${file}`));
+    });
+
+    await Promise.all(loadPromises);
+
+    if (blinkText) blinkText.innerText = "Please tap the screen";
     this.init();
   }
 
-  // --- 【重要】BGM切り替えメソッド ---
   playBGM(nextBGM) {
-    // 1. すでに同じ曲が流れているなら何もしない
-    if (this.currentBGM === nextBGM) return;
+    const allBGMs = [this.menuBGM, this.gameBGM, this.bossBGM];
+    allBGMs.forEach(bgm => {
+      if (bgm) {
+        bgm.pause();
+        bgm.currentTime = 0;
+      }
+    });
 
-    // 2. 別の曲が流れていたら止める
-    if (this.currentBGM) {
-      this.currentBGM.pause();
-      this.currentBGM.currentTime = 0;
+    // nextBGMがnull（stopAllBGM経由）ならここで終了
+    if (!nextBGM) {
+      this.currentBGM = null;
+      return;
     }
 
-    // 3. 新しい曲を再生
-    if (nextBGM) {
-      this.currentBGM = nextBGM;
-      this.currentBGM.play().catch(e => console.log("Audio play blocked"));
+    // ゲームオーバー時は、ループOFF（クリア音）の時だけ再生を許可
+    if (this.currentGame && this.currentGame.isGameOver) {
+      if (nextBGM.loop === true) return;
     }
+
+    this.currentBGM = nextBGM;
+    nextBGM.play().catch(e => {});
   }
 
   stopAllBGM() {
-    if (this.currentBGM) {
-      this.currentBGM.pause();
-      this.currentBGM.currentTime = 0;
-      this.currentBGM = null;
-    }
+    this.playBGM(null); // 全停止
   }
 
-  // ★ 改造版 playSE ★
   playSE(filename) {
+    // ボスBGMと同じファイルをSEとして鳴らそうとしたら無視する
+    if (filename === 'maou_bgm_cyber30.mp3') return;
+
     const se = this.seCache[filename];
-    
     if (se) {
-      // 連続で鳴らすために、再生位置を0に戻してから再生する
       se.pause();
       se.currentTime = 0;
       se.volume = 0.5;
       se.play().catch(e => {});
-    } else {
-      // もし倉庫にない音が指定された場合のみ、新しく作る（予備動作）
-      const newSe = new Audio(`${this.soundPath}${filename}`);
-      newSe.volume = 0.5;
-      newSe.play().catch(e => {});
     }
   }
 
@@ -101,9 +140,6 @@ class App {
     this.adjustScale();
     window.addEventListener('resize', () => this.adjustScale());
 
-    // --- メニュー系のボタン（pointerdownで即反応＋イベント伝播停止） ---
-    
-    // タイトル画面
     this.titleScreen.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       if (this.titleScreen.style.display !== 'none') {
@@ -113,7 +149,20 @@ class App {
       }
     });
 
-    // レベル選択
+    // ★ ここに追加！
+    const resetBtn = document.getElementById('debug-reset-btn');
+    if (resetBtn) {
+      resetBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        if (confirm("全てのクリア記録とレベル進行度をリセットしますか？")) {
+          localStorage.removeItem('mp_max_lv');
+          localStorage.removeItem('mp_records');
+          alert("データをリセットしました。ページを再読み込みします。");
+          location.reload(); 
+        }
+      });
+    }
+
     document.getElementById('prev-lv').addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       this.changeLevel(-1);
@@ -123,7 +172,6 @@ class App {
       this.changeLevel(1);
     });
 
-    // スタート・リトライ共通
     const startAction = (e) => {
       e.stopPropagation();
       this.startGame();
@@ -131,16 +179,23 @@ class App {
     document.getElementById('start-btn').addEventListener('pointerdown', startAction);
     document.getElementById('retry-btn').addEventListener('pointerdown', startAction);
 
-    // タイトルへ戻る
     document.getElementById('back-to-title').addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       this.backToTitle();
     });
 
-    // 次のステージ・ステージ選択へ
     document.getElementById('next-stage-btn').addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      this.nextStage();
+      e.preventDefault();  // ブラウザのデフォルト動作を抑止
+      e.stopPropagation(); // イベントが下のレイヤーに伝わるのを阻止
+      
+      // ボタンを即座に非表示にして、二重クリックを防ぐ
+      e.target.style.display = 'none';
+
+      // ほんのわずか（50ms）だけ処理を遅らせて、
+      // 「クリックした」という判定が消えてからステージ遷移させる
+      setTimeout(() => {
+        this.nextStage();
+      }, 50);
     });
 
     const toSelectAction = (e) => {
@@ -150,11 +205,9 @@ class App {
     document.getElementById('back-to-select-btn').addEventListener('pointerdown', toSelectAction);
     document.getElementById('back-to-select-from-over').addEventListener('pointerdown', toSelectAction);
     
-    // 右クリックメニュー禁止
     window.addEventListener('contextmenu', (e) => e.preventDefault());
-  }// ← ここが init の閉じカッコです。このすぐ下に書きます。
+  }
 
-  // 2. ここに adjustScale を追加
   adjustScale() {
     const frame = document.getElementById('mobile-frame');
     if (!frame) return;
@@ -178,7 +231,6 @@ class App {
   showSelectScreen() {
     this.playBGM(this.menuBGM);
     this.selectScreen.style.display = 'flex';
-    // 追加：他のメニューを隠す
     if (this.clearMenu) this.clearMenu.style.display = 'none';
     const overMenu = document.getElementById('game-over-menu');
     if (overMenu) overMenu.style.display = 'none';
@@ -186,18 +238,69 @@ class App {
     this.updateSelectUI();
   }
 
-  // もし nextStage メソッドがなければ追加
   nextStage() {
+    // ★修正：最終ステージの場合はレベル1に戻してセレクト画面へ（全クリのお祝い）
+    if (this.currentSelectLevel >= this.totalLevels) {
+      alert("ALL STAGE CLEAR!! おめでとうございます！");
+      this.currentSelectLevel = 1;
+      this.showSelectScreen();
+      return;
+    }
+    
     this.currentSelectLevel++;
     this.startGame();
   }
 
+  backToTitle() {
+    this.stopAllBGM(); 
+    this.selectScreen.style.display = 'none';
+    this.titleScreen.style.display = 'flex';
+  }
+
+  changeLevel(diff) {
+    let next = this.currentSelectLevel + diff;
+
+    // ★ループ処理に書き換え
+    if (next > this.maxClearedLevel) {
+        // 解放済みの最大を超えようとしたらレベル1へ
+        next = 1;
+    } else if (next < 1) {
+        // レベル1より前に行こうとしたら解放済みの最大レベルへ
+        next = this.maxClearedLevel;
+    }
+
+    this.currentSelectLevel = next;
+    this.updateSelectUI();
+}
+
+  updateSelectUI() {
+    const lvStr = String(this.currentSelectLevel).padStart(3, '0');
+    this.levelDisplay.innerText = `LV ${lvStr}`;
+    // ★修正：常にボタンを有効に見せる（ループするため）
+    document.getElementById('prev-lv').classList.remove('disabled');
+    document.getElementById('next-lv').classList.remove('disabled');
+
+    const recordDisplay = document.getElementById('record-display');
+    if (recordDisplay) {
+      let records = JSON.parse(localStorage.getItem('mp_records')) || {};
+      let rec = records[this.currentSelectLevel];
+      
+      if (rec) {
+        let oneShotText = rec.oneShot ? `<div style="color: #ffaa00; font-size: 0.85rem; margin-top: 5px; font-weight: bold; letter-spacing: 1px;">★ ONE SHOT DESTROYED ★</div>` : '';
+        recordDisplay.innerHTML = `BEST TIME: ${rec.time}s [RANK: <span style="color: #ff0;">${rec.rank}</span>]${oneShotText}`;
+      } else {
+        recordDisplay.innerHTML = `<span style="color: #888;">--- NO RECORD ---</span>`;
+      }
+    }
+  }
+
   startGame() {
-    this.playBGM(this.gameBGM);
+    // ここで一律 gameBGM を流すのをやめる（Gameクラス側に任せる）
+    // this.playBGM(this.gameBGM); ←これをコメントアウトまたは削除
+    
     this.selectScreen.style.display = 'none';
     this.clearMenu.style.display = 'none';
     
-    // ゲームオーバーメニューを隠し、操作を有効に戻す
     const overMenu = document.getElementById('game-over-menu');
     if (overMenu) overMenu.style.display = 'none';
     document.getElementById('game-container').style.pointerEvents = 'auto';
@@ -205,59 +308,75 @@ class App {
     if (this.currentGame) this.currentGame.destroy();
     
     try {
-      this.currentGame = new Game(this.currentSelectLevel, () => {
-        this.onStageClear();
+      this.currentGame = new Game(this.currentSelectLevel, (result) => {
+        this.onStageClear(result); 
       });
     } catch (e) {
       console.error("Game Start Error:", e);
     }
   }
 
-  backToTitle() {
-    this.stopAllBGM(); // タイトルに戻る時は完全停止
-    this.selectScreen.style.display = 'none';
-    this.titleScreen.style.display = 'flex';
-  }
-
-  // --- 残りのUI処理 ---
-  changeLevel(diff) {
-    const next = this.currentSelectLevel + diff;
-    if (next >= 1 && next <= this.maxClearedLevel) {
-      this.currentSelectLevel = next;
-      this.updateSelectUI();
+  onStageClear(result) {
+    // ★修正：現在のレベルが最大解放レベルと同じ、かつ、まだ全ステージ数に達していない場合のみ次を解放
+    if (this.currentSelectLevel === this.maxClearedLevel && this.maxClearedLevel < this.totalLevels) {
+        this.maxClearedLevel++;
+        localStorage.setItem('mp_max_lv', this.maxClearedLevel);
     }
-  }
-
-  updateSelectUI() {
-    const lvStr = String(this.currentSelectLevel).padStart(3, '0');
-    this.levelDisplay.innerText = `LV ${lvStr}`;
-    document.getElementById('prev-lv').classList.toggle('disabled', this.currentSelectLevel <= 1);
-    document.getElementById('next-lv').classList.toggle('disabled', this.currentSelectLevel >= this.maxClearedLevel);
-  }
-
-  onStageClear() {
-    if (this.currentSelectLevel === this.maxClearedLevel) {
-      this.maxClearedLevel++;
-      localStorage.setItem('mp_max_lv', this.maxClearedLevel);
+    
+    if (result) {
+        this.saveRecord(this.currentSelectLevel, result);
     }
+    
     setTimeout(() => {
-      if (this.clearMenu) this.clearMenu.style.display = 'flex';
-    }, 2000);
+    if (this.clearMenu) {
+      // ★追加：最終ステージをクリアした時は「次のステージへ」ボタンを非表示にする
+      const nextBtn = document.getElementById('next-stage-btn');
+      if (nextBtn) {
+        if (this.currentSelectLevel >= this.totalLevels) {
+          nextBtn.style.display = 'none';
+        } else {
+          nextBtn.style.display = 'block'; // 通常は表示
+        }
+      }
+      this.clearMenu.style.display = 'flex';
+    }
+  }, 4000);
   }
-}
+
+  saveRecord(level, result) {
+    let records = JSON.parse(localStorage.getItem('mp_records')) || {};
+    let currentRecord = records[level];
+
+    let isNewBest = (!currentRecord || result.time < currentRecord.time);
+
+    if (!currentRecord) {
+      records[level] = { time: result.time, rank: result.rank, oneShot: result.oneShot };
+    } else {
+      if (isNewBest) {
+        records[level].time = result.time;
+        records[level].rank = result.rank;
+      }
+      if (result.oneShot) {
+        records[level].oneShot = true;
+      }
+    }
+    localStorage.setItem('mp_records', JSON.stringify(records));
+  }
+} // ★★★ ここが抜けていた App クラスの閉じ括弧です ★★★
 
 class Game {
   constructor(level, onClear) {
     this.level = level;
     this.onClear = onClear;
+    this.isGameOver = false; // ★最初にはっきりリセット
+    this.isStarting = true; // ★追加：演出中フラグ
+    window.app.currentGame = this; // ★即座に自身をappに登録
 
     const container = document.getElementById('game-container');
     
-    // ★ここを修正：中身を消すとメニューまで消えるので、
-    // タイトルや選択画面、クリアメニューを「残して」から他を消す
     const screens = container.querySelectorAll('.overlay-screen');
     container.innerHTML = ""; 
-    screens.forEach(s => container.appendChild(s)); // メニュー類を戻す
+    screens.forEach(s => container.appendChild(s)); 
     
     this.stage = new Stage('game-container');
     this.status = document.getElementById('status');
@@ -271,37 +390,55 @@ class Game {
 
     this.player = this.createPlayer();
 
-    // game.js の constructor 内
-    // 1. levels.js から現在のレベルデータを取得（Lv1〜Lv100まで自動対応）
+    // --- ここから差し替え・追記 ---
     const levelData = GAME_LEVELS[this.level] || GAME_LEVELS[1];
+    this.isBossStage = levelData.enemies?.some(e => e.type === 'U') || levelData.enemyType === 'U';
+    
+    // BGMの再生
+    // --- ここから演出処理 ---
+    if (this.isBossStage) {
+      // 1. BOSS BATTLE の文字を表示
+      this.showBossIntro();
+      
+      // 2. 1.2秒後にゲーム開始
+      setTimeout(() => {
+        this.isStarting = false;
+        window.app.bossBGM.loop = true;
+        window.app.playBGM(window.app.bossBGM);
+        this.updateUI("> BOSS BATTLE START!!", "#f00");
+      }, 1200);
+    } else {
+      // 通常ステージは即開始
+      this.isStarting = false;
+      window.app.gameBGM.loop = true;
+      window.app.playBGM(window.app.gameBGM);
+      const msg = levelData.statusMsg || `STAGE ${this.level} START`;
+      this.updateUI(`> ${msg}`, "#0f0");
+    }
+    // --- 演出処理ここまで ---
 
-  // 2. 敵の生成（配列管理にして(0,0)の幽霊を防止）
-  this.enemies = []; 
+    this.enemies = []; 
 
-  if (levelData.enemies && Array.isArray(levelData.enemies)) {
-    // 【新形式：Lv5など】配列がある場合は全員生成
-    levelData.enemies.forEach(config => {
-      const e = new Enemy(this.stage, config.x, config.y, config.type);
-      if (config.radius) e.radius = config.radius;
+    if (levelData.enemies && Array.isArray(levelData.enemies)) {
+      levelData.enemies.forEach(config => {
+        const e = new Enemy(this.stage, config.x, config.y, config.type);
+        if (config.radius) e.radius = config.radius;
+        if (config.noPause) e.noPause = config.noPause; // ★この1行を追加！
+        this.enemies.push(e);
+      });
+    } else if (levelData.enemyType) {
+      const e = new Enemy(this.stage, levelData.enemyX, levelData.enemyY, levelData.enemyType);
+      if (levelData.radius) e.radius = levelData.radius;
       this.enemies.push(e);
-    });
-  } else if (levelData.enemyType) {
-    // 【旧形式：Lv1〜4】enemyTypeがある時だけ生成（これで幽霊を阻止）
-    const e = new Enemy(this.stage, levelData.enemyX, levelData.enemyY, levelData.enemyType);
-    if (levelData.radius) e.radius = levelData.radius;
-    this.enemies.push(e);
+    }
+
+    this.init();
+    this.startEnemyAI();
+    this.startBossSmoothMove();
+
+    const msg = levelData.statusMsg || `STAGE ${this.level} START`;
+    this.updateUI(`> ${msg}`, "#0f0");
   }
-
-  // --- 初期化実行 ---
-  this.init();
-  this.startEnemyAI();
-  
-  // 4. UIの表示もデータから取得
-  const msg = levelData.statusMsg || `STAGE ${this.level} START`;
-  this.updateUI(`> ${msg}`, "#0f0");
-
-  // constructor の閉じカッコ
-}
 
   createPlayer() {
     const p = document.createElement('div');
@@ -311,13 +448,51 @@ class Game {
     return p;
   }
 
+  // ★ ここに追加！ ★
+  showBossIntro() {
+    const intro = document.createElement('div');
+    intro.style.cssText = `
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      /* 初期位置はアニメーションで制御するため translate は書かない */
+      color: #ff0000;
+      font-size: 32px;               /* 確実にはみ出さないサイズ */
+      font-weight: 900;
+      text-shadow: 
+        -2px -2px 0 #fff,
+         2px -2px 0 #fff,
+        -2px  2px 0 #fff,
+         2px  2px 0 #fff,
+        0 0 20px #f00;
+      white-space: nowrap;
+      z-index: 9999;
+      pointer-events: none;
+      font-family: 'Arial Black', sans-serif;
+      /* 1.2秒かけて右→中央停止→左を実行 */
+      animation: boss-slide 1.2s ease-in-out forwards;
+      text-align: center;
+    `;
+    intro.innerText = "BOSS BATTLE!!";
+    
+    this.stage.container.appendChild(intro);
+
+    // アニメーションが終わる頃に要素を消す
+    setTimeout(() => {
+      intro.remove();
+    }, 1300);
+  }
+
   init() {
     this.updatePlayerVisual();
     this.recordPath(0, 0);
 
-    // 盤面のタップ（pointerdown）
+    this.startTime = Date.now();
+
     this.stage.container.addEventListener('pointerdown', (e) => {
-      if (this.isGameOver) return;
+      // ゲーム開始から0.5秒間は入力を受け付けない（突き抜け防止）
+      if (this.isGameOver || (Date.now() - this.startTime < 500)) return;
+      
       const cell = e.target.closest('.cell');
       if (cell) {
         const x = parseInt(cell.dataset.x);
@@ -326,20 +501,17 @@ class Game {
       }
     });
 
-    // 魔法ボタン（既存のボタンに上書き）
     if (this.magicBtn) {
-      // 古いイベントを消すために一度空にする
       const newBtn = this.magicBtn.cloneNode(true);
       this.magicBtn.parentNode.replaceChild(newBtn, this.magicBtn);
       this.magicBtn = newBtn;
       
       this.magicBtn.addEventListener('pointerdown', (e) => {
-        // 魔法ボタンの時だけ preventDefault をして連打によるズームを防ぐ
         e.preventDefault();
         this.castMagic();
       });
     }
-  } // ← ここで init メソッドが正しく閉じられます
+  }
 
   startEnemyAI() {
     const loop = () => {
@@ -353,10 +525,9 @@ class Game {
         if (!enemy.isAlive || enemy.isPausing) return;
 
         if (!enemy.moveTick) enemy.moveTick = 0;
-        enemy.moveTick += 100; // 100msずつカウント
+        enemy.moveTick += 100;
 
         if (enemy.type === 'A') {
-          // Aタイプ：プレイヤー移動中は300ms、停止中は1000ms
           const interval = this.isMoving ? 300 : 1000;
           if (enemy.moveTick >= interval) {
             if (this.isMoving) {
@@ -368,14 +539,12 @@ class Game {
           }
         } 
         else if (enemy.type === 'E') {
-          // Eタイプ：1000ms（1秒）ごとに次のマスへ命令を出す
-          if (enemy.moveTick >= 1000) {
+          if (enemy.moveTick >= 2000) {
             enemy.move(this.playerPos.x, this.playerPos.y, this.level);
             enemy.moveTick = 0;
           }
         } 
         else {
-          // B, C, Dタイプ：300msごとに動く
           if (enemy.moveTick >= 300) {
             enemy.move();
             enemy.moveTick = 0;
@@ -384,16 +553,14 @@ class Game {
       });
 
       this.checkCollision();
-      setTimeout(loop, 100); // 心拍数を100msに細分化
+      setTimeout(loop, 100); 
     };
     loop();
   }
 
-  // game.js の checkCollision メソッドを書き換え
   checkCollision() {
     if (this.isGameOver || !this.isMoving) return; 
 
-    // 「いずれかの敵」に当たったか判定
     const isHit = this.enemies.some(enemy => {
       if (!enemy || !enemy.isAlive) return false;
       const eGrid = enemy.getGridPos();
@@ -419,13 +586,13 @@ class Game {
         const menu = document.getElementById('game-over-menu');
         if (menu) {
           menu.style.display = 'flex';
-          // 念のため、メニューが表示された瞬間に「クリックを邪魔するもの」を排除
           this.stage.container.style.pointerEvents = 'none'; 
           menu.style.pointerEvents = 'auto';
         }
       }, 1000);
     }, 1000);
   }
+
   createDieExplosion(x, y) {
     const s = CELL_RAW_SIZE + GAP;
     const cx = x * s + (CELL_RAW_SIZE / 2);
@@ -457,7 +624,8 @@ class Game {
   }
 
   async onCellClick(tx, ty) {
-    if (this.isMoving || this.isMagicCasting || this.isGameOver) return;
+    // isStarting が true なら何もしない
+    if (this.isMoving || this.isMagicCasting || this.isGameOver || this.isStarting) return;
     this.stage.showTapEffect(tx, ty);
     this.isMoving = true;
     this.magicBtn.classList.add('disabled');
@@ -478,11 +646,11 @@ class Game {
     for (let i = 0; i < Math.abs(diff); i++) {
       if (this.isGameOver) break;
       this.playerPos[axis] += step;
-      window.app.playSE('maou_se_system10.wav'); // ★追加：移動音
+      window.app.playSE('maou_se_system10.wav'); 
       this.updatePlayerVisual();
       this.recordPath(this.playerPos.x, this.playerPos.y);
       this.checkCollision();
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 280)); 
     }
   }
 
@@ -493,22 +661,25 @@ class Game {
     this.player.classList.replace('invincible', 'active');
     
     let defeatedEnemies = [];
+    let bossDamageCount = 0;
 
-    // 1. 連鎖爆発フェーズ
     for (let i = 0; i < this.pathHistory.length; i++) {
       const pos = this.pathHistory[i];
-      
-      // 【軽量化ポイント：エフェクトの即時破棄】
       const explosion = this.stage.showExplosion(pos.x, pos.y);
-      if (explosion) {
-        // 500ms（アニメ終了後）に物理的にDOMから削除してメモリを解放する
-        setTimeout(() => explosion.remove(), 500);
-      }
+      if (explosion) setTimeout(() => explosion.remove(), 500);
 
       if (i % 4 === 0) window.app.playSE('maou_se_magic_fire11.wav');
 
       this.enemies.forEach(enemy => {
-        if (enemy.isAlive) {
+        if (!enemy.isAlive) return;
+        if (enemy.isBoss) {
+          const area = enemy.getOccupiedRect();
+          if (area.some(p => p.x === pos.x && p.y === pos.y)) {
+            const isDown = enemy.applyDamage();
+            bossDamageCount++;
+            if (isDown && !defeatedEnemies.includes(enemy)) defeatedEnemies.push(enemy);
+          }
+        } else {
           const eGrid = enemy.getGridPos();
           if (pos.x === eGrid.x && pos.y === eGrid.y && !defeatedEnemies.includes(enemy)) {
             defeatedEnemies.push(enemy);
@@ -517,26 +688,31 @@ class Game {
       });
 
       this.stage.clearTile(pos.x, pos.y);
-      await new Promise(r => setTimeout(r, 60)); // ← 100msから60msに短縮（テンポアップ）
+      await new Promise(r => setTimeout(r, 60)); 
     }
 
-    // 2. 撃破フェーズ
+    // 1. 判定フラグを確定（この行を消すと isOneShot エラーになります）
+    const isOneShot = (defeatedEnemies.length >= 2) || (bossDamageCount >= 3);
+
     if (defeatedEnemies.length > 0) {
       await new Promise(r => setTimeout(r, 200));
       defeatedEnemies.forEach(enemy => enemy.die());
 
       if (this.enemies.every(e => !e.isAlive)) {
-        window.app.playSE('maou_se_system19.wav');
-        setTimeout(() => { this.gameClear(); }, 500);
-      } else {
-        this.finalizeMagic();
-      }
-    } else {
-      this.finalizeMagic();
-    }
-  }
+        this.isGameOver = true; 
+        // ここで鳴らしていた system19 を削除（または消滅SEに変える）
+        this.updateUI("★ ENEMY DEFEATED ★", "#fff");
 
-  // 後片付け用の補助メソッド（コードをスッキリさせるため）
+        setTimeout(() => { 
+          this.gameClear(isOneShot); // 2秒後にここへ
+        }, 2000); 
+
+        return; 
+      }
+    }
+    this.finalizeMagic();
+  } // ← castMagic 本体の閉じ括弧
+
   finalizeMagic() {
     this.pathHistory = [this.pathHistory[this.pathHistory.length - 1]];
     this.isMagicCasting = false;
@@ -545,36 +721,54 @@ class Game {
     this.updateUI("> STANDBY (INVINCIBLE)", "#0f0");
   }
 
-  gameClear() {
-    if (this.isGameOver) return;
-    this.isGameOver = true;
+  gameClear(isOneShot = false) {
+    if (this.stage.container.querySelector('.clear-message')) return;
 
-    // 敵を倒した直後のフィードバック
-    this.updateUI("★ ENEMY DEFEATED ★", "#fff");
+    const elapsedSeconds = Math.floor((Date.now() - this.startTime) / 1000);
 
-    // 2.5秒（2500ミリ秒）のタメを作る
-    setTimeout(() => {
-      // 1. クリアSEを鳴らす
-      if (window.app) {
+    // 1. ランク判定（ここで行う）
+    let rank = "C";
+    if (elapsedSeconds <= 30) rank = "S";
+    else if (elapsedSeconds <= 60) rank = "A";
+    else if (elapsedSeconds <= 90) rank = "B";
+
+    // 2. 音の同期実行
+    // --- 音の制御：迷わずこれで行きましょう ---
+    if (window.app) {
+      window.app.stopAllBGM(); // ボスBGM(cyber30)を止める
+
+      if (this.isBossStage) {
+        // ★重複していた cyber30 ではなく、追加済みの 06 を鳴らす
+        window.app.playSE('maou_se_jingle06.wav'); 
+      } else {
         window.app.playSE('maou_se_jingle12.wav');
       }
+    }
 
-      // 2. 「CLEAR!」の巨大文字を表示する
-      const div = document.createElement('div');
-      div.className = 'clear-message';
-      div.innerText = 'CLEAR!';
-      this.stage.container.appendChild(div);
+    // 3. 表示メソッドへ全て丸投げ（即座に呼ぶ！）
+    this.showResultUI(isOneShot, elapsedSeconds, rank); 
+  }
 
-      // 3. UIを最終的な表示に更新
-      this.updateUI("★ STAGE CLEAR ★", "#fff");
+  // 表示処理：受け取った値をそのまま出すだけ
+  showResultUI(isOneShot, time, rank) {
+    let bonusHtml = isOneShot ? `<div style="font-size: 22px; color: #ffaa00; text-shadow: 0 0 15px #f00; margin-bottom: 10px; font-weight: bold; letter-spacing: 2px;">ONE SHOT DESTROYED!!</div>` : "";
+    const div = document.createElement('div');
+    div.className = 'clear-message';
+    div.style.textAlign = 'center';
+    div.innerHTML = `
+      ${bonusHtml}
+      <div style="font-size: 54px; margin-bottom: 10px;">CLEAR!</div>
+      <div style="font-size: 24px; color: #ddd; text-shadow: 0 0 10px #000; line-height: 1.4;">
+        TIME: ${time}s<br>
+        RANK: <span style="color: #ff0;">${rank}</span>
+      </div>
+    `;
+    this.stage.container.appendChild(div);
+    this.updateUI(`★ CLEAR! [TIME:${time}s / RANK:${rank}] ★`, "#fff");
 
-      // 4. 【重要】App側のクリア処理を呼び出す
-      // これにより、さらに2秒後くらいに「次のステージへ」ボタンが出ます
-      if (this.onClear) {
-        this.onClear();
-      }
-
-    }, 2500); 
+    if (this.onClear) {
+      this.onClear({ time: time, rank: rank, oneShot: isOneShot });
+    }
   }
 
   updateUI(t, c) {
@@ -586,12 +780,25 @@ class Game {
   destroy() {
     this.isGameOver = true;
   }
-}
+// ★ここから追記！
+  startBossSmoothMove() {
+    const smoothLoop = () => {
+      if (this.isGameOver) return;
+      
+      // ★修正：魔法詠唱中でなく、かつ「開始演出中でない時」だけ動く
+      if (!this.isMagicCasting && !this.isStarting) {
+        this.enemies.forEach(enemy => {
+          if (enemy.isAlive && enemy.type === 'U') {
+            enemy.move(this.playerPos.x, this.playerPos.y);
+          }
+        });
+      }
+      requestAnimationFrame(smoothLoop);
+    };
+    requestAnimationFrame(smoothLoop);
+  }
+} // ← ここが Game クラスの本当の終わり
 
 window.onload = () => {
-    // window.app に入れることで、どこからでも app.playSE が呼べるようになります
     window.app = new App(); 
 };
-// ダブルタップによるズームをJavaScript側で強制停止
-
-// 2本指でのピンチズームも禁止

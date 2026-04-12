@@ -12,29 +12,29 @@
     }
 
     /* --- body の上書き --- */
-    body {
-      margin: 0; 
-      padding: 0; 
-      display: flex; 
-      justify-content: center; 
-      align-items: center; 
-      height: 100vh; 
-      background-color: #000; /* 隙間は真っ黒に */
-      color: white; 
-      font-family: sans-serif; 
-      
-      /* スマホ特有の挙動（揺れ・ズーム）を徹底ガード */
-      overflow: hidden; 
-      position: fixed; /* 画面を固定してバウンド防止 */
-      width: 100%;
-      overscroll-behavior: none; /* スクロールの跳ね返りを禁止 */
-      touch-action: none; /* ブラウザのズーム・パンを無効化 */
-
-      user-select: none; 
-      -webkit-user-select: none;
-      touch-action: none; /* ★重要：ブラウザ独自のズームやパンを一切禁止する */
-      -webkit-text-size-adjust: none; /* 文字サイズが勝手に変わるのを防ぐ */
-    }
+body {
+  margin: 0; 
+  padding: 0; 
+  display: flex; 
+  justify-content: center; 
+  align-items: center; 
+  height: 100vh; 
+  background-color: #000;
+  color: white; 
+  font-family: sans-serif; 
+  
+  overflow: hidden; 
+  position: fixed; 
+  width: 100%;
+  
+  /* touch-action: none; を削除 */
+  /* 代わりにこれを入れる（iOS等のバウンド防止） */
+  overscroll-behavior: none; 
+  
+  user-select: none; 
+  -webkit-user-select: none;
+  -webkit-text-size-adjust: none;
+}
 
     /* --- #mobile-frame の上書き --- */
     #mobile-frame {
@@ -68,12 +68,17 @@
     }
 
     #game-container {
-      position: relative; display: grid; 
-      grid-template-columns: repeat(9, var(--cell-size));
-      grid-template-rows: repeat(9, var(--cell-size)); 
-      gap: var(--gap); background-color: #444; /* 漆黒(#000)ではなく、深いグレーにする */
-      border: 2px solid #555; padding: 2px;
-    }
+  position: relative;
+  display: grid; 
+  grid-template-columns: repeat(9, var(--cell-size));
+  grid-template-rows: repeat(9, var(--cell-size)); 
+  gap: var(--gap);
+  background-color: #444;
+  border: 2px solid #555;
+  padding: 2px;
+  /* ↓ これ1行で「ズーム禁止、タップはOK」になります */
+  touch-action: manipulation;
+}
 
     /* 元の .cell をこれに書き換え */
 .cell { 
@@ -148,24 +153,25 @@
 
     /* --- メニュー画面 --- */
     .overlay-screen {
-      position: absolute; 
-      top: 0; 
-      left: 0; 
-      width: 100%; 
-      height: 100%;
-      background: rgba(0,0,0,0.9); 
-      
-      /* 2000から3000に強化（他の要素に邪魔させない） */
-      z-index: 3000; 
-      
-      display: flex; 
-      flex-direction: column; 
-      justify-content: center; 
-      align-items: center;
+  position: absolute; 
+  top: 0; 
+  left: 0; 
+  width: 100%; 
+  height: 100%;
+  background: rgba(0,0,0,0.9); 
+  z-index: 3000; 
+  display: flex; 
+  flex-direction: column; 
+  justify-content: center; 
+  align-items: center;
 
-      /* タップ・クリックを確実に受け取れるように明示 */
-      pointer-events: auto; 
-    }
+  /* タップ・クリックを確実に受け取れるように明示 */
+  pointer-events: auto; 
+
+  /* ★ ここに追加：ズームを徹底ガードしつつ、タップ反応を爆速にする */
+  touch-action: none; 
+  -webkit-tap-highlight-color: transparent;
+}
 
     /* ゲームオーバー画面はさらに強調（色と重なり） */
     #game-over-menu {
@@ -200,7 +206,7 @@
       z-index: 110; /* 敵よりさらに手前に */
     }
     #player.invincible { opacity: 0.6; filter: brightness(0.5); transform: scale(0.9); }
-    #player.active { filter: brightness(0) invert(1) drop-shadow(0 0 5px #fff); animation: walking 0.15s infinite alternate linear; }
+    #player.active { filter: brightness(0) invert(1); animation: walking 0.15s infinite alternate linear; }
     .player-die { animation: player-die-anim 1.0s ease-in forwards !important; }
     @keyframes player-die-anim {
       0% { transform: scale(1) rotate(0); opacity: 1; }
@@ -248,6 +254,37 @@
       100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
     }
 
+/* ★ ここから下にボスの設定を追記 ★ */
+
+  /* ボス用のスタイル：3マス分(約118px)のサイズにする */
+  #enemy.boss {
+    width: 118px !important;
+    height: 118px !important;
+    font-size: 100px !important;
+    line-height: 118px !important;
+    margin-left: -40px !important;
+    margin-top: -40px !important;
+    color: #f00; 
+    text-shadow: 0 0 15px rgba(255, 0, 0, 0.7);
+    background: transparent !important;
+    border: none !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    
+    /* ★重要：ボスの時だけ CSS Transition を完全に強制オフにする */
+    transition: left 0.05s linear, top 0.05s linear !important;
+}
+
+  /* ダメージ演出（より激しく点滅） */
+  .damage {
+    color: #fff !important; /* 星が白く光る */
+    text-shadow: 0 0 30px #f00, 0 0 50px #f00 !important;
+    transform: scale(1.2) !important;
+    transition: none !important;
+  }
+
     /* --- 魔法・クリア演出 --- */
     .explosion { 
       position: absolute; width: var(--cell-size); height: var(--cell-size);
@@ -275,60 +312,110 @@
     .magic-btn.active { opacity: 1; background: radial-gradient(#f00, #500); color: #fff; border-color: #f88; box-shadow: 0 0 20px #f00; }
     .tap-effect { position: absolute; width: 40px; height: 40px; border: 2px solid #fff; border-radius: 50%; animation: tap-ripple 0.5s forwards; }
     @keyframes tap-ripple { 0% { transform: scale(0.2); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+    
+    @keyframes boss-slide {
+  0% { transform: translate(150%, -50%); opacity: 0; }   /* 右の外側 */
+  20% { transform: translate(-50%, -50%); opacity: 1; }  /* 中央で停止 */
+  80% { transform: translate(-50%, -50%); opacity: 1; }  /* 停止維持 */
+  100% { transform: translate(-150%, -50%); opacity: 0; } /* 左の外へ */
+}
   </style>
 </head>
+
+<script>
+  // 1. マルチタッチ（ピンチズーム）のみを禁止し、シングルタップは通す
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length > 1) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  // 2. ダブルタップズームのみを検知して阻止する（クリックイベントは汚さない）
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+      // ここで preventDefault をするとクリックが消える場合があるので、
+      // ズームだけを抑制する設定（CSSの touch-action）に任せるのが安全です。
+    }
+    lastTouchEnd = now;
+  }, false);
+</script>
+
 <body>
   <div id="mobile-frame">
     <div id="game-view">
       <h1 style="font-size: 1.2rem; margin: 10px 0;">MAGIC PATH</h1>
       
-      <div id="game-container">
-  <div id="title-screen" class="overlay-screen">
-    <div class="title-logo">Ｃｏｒｄ</div>
+      <div id="title-screen" class="overlay-screen" style="pointer-events: auto !important; cursor: pointer;">
+        <div class="title-logo">Ｃｏｒｄ</div>
+        <div class="game-instructions" style="margin: 20px 0; line-height: 1.8; color: #fff; font-size: 16px; text-shadow: 2px 2px 2px #000;">
+          <p>止まっていれば無敵！</p>
+          <p>たどった道に魔法を発動！</p>
+          <p>画面内の敵を全滅させろ！</p>
+        </div>
+        <div class="blink-text">Please tap the screen</div>
+      </div>
 
-    <div class="game-instructions" style="margin: 20px 0; line-height: 1.8; color: #fff; font-size: 16px; text-shadow: 2px 2px 2px #000;">
-      <p>止まっていれば無敵！</p>
-      <p>たどった道に魔法を発動！</p>
-      <p>画面内の敵を全滅させろ！</p>
-    </div>
-    <div class="blink-text">Please tap the screen</div>
-  </div>
-
-        <div id="select-screen" class="overlay-screen" style="display: none;">
-          <div class="select-controls">
-            <span id="prev-lv" class="arrow">◁</span>
-            <span id="level-display">LV 001</span>
-            <span id="next-lv" class="arrow">▹</span>
-          </div>
-          <div id="start-btn" class="menu-btn">スタート</div>
-          <div id="back-to-title" class="menu-btn secondary">タイトル画面へ</div>
+      <div id="select-screen" class="overlay-screen" style="display: none;">
+        <div class="select-controls">
+          <span id="prev-lv" class="arrow">◁</span>
+          <span id="level-display">LV 001</span>
+          <span id="next-lv" class="arrow">▹</span>
         </div>
 
-        <div id="clear-menu" class="overlay-screen" style="display: none; background: rgba(0,0,0,0.85);">
-          <div style="color: #fff; font-size: 1.8rem; margin-bottom: 30px; text-shadow: 0 0 10px #ff0; font-weight: bold;">
-            STAGE CLEAR!
+<div id="record-display" style="min-height: 50px; text-align: center; margin-bottom: 20px; font-size: 0.95rem; color: #ddd; text-shadow: 0 0 5px #000; line-height: 1.5;">
           </div>
-          <div id="next-stage-btn" class="menu-btn" style="border-color: #ff0; color: #ff0;">次のステージへ</div>
-          <div id="back-to-select-btn" class="menu-btn secondary">ステージ選択へ</div>
-        </div>
 
-        <div id="game-over-menu" class="overlay-screen" style="display: none; background: rgba(50,0,0,0.9);">
-          <div style="color: #f44; font-size: 1.8rem; margin-bottom: 30px; text-shadow: 0 0 10px #f00; font-weight: bold;">
-            GAME OVER
-          </div>
-          <div id="retry-btn" class="menu-btn" style="border-color: #f44; color: #f44;">リトライ</div>
-          <div id="back-to-select-from-over" class="menu-btn secondary">ステージ選択へ</div>
+        <div id="start-btn" class="menu-btn">スタート</div>
+        <div id="back-to-title" class="menu-btn secondary">タイトル画面へ</div>
+      <div id="debug-reset-btn" style="position: absolute; bottom: 20px; right: 20px; font-size: 10px; color: #444; text-decoration: underline; cursor: pointer; padding: 10px;">RESET DATA</div>
+</div>
+
+      <div id="clear-menu" class="overlay-screen" style="display: none; background: rgba(0,0,0,0.85);">
+        <div style="color: #fff; font-size: 1.8rem; margin-bottom: 30px; text-shadow: 0 0 10px #ff0; font-weight: bold;">
+          STAGE CLEAR!
         </div>
-      </div> </div> <div class="separator"></div>
+        <div id="next-stage-btn" class="menu-btn" style="border-color: #ff0; color: #ff0;">次のステージへ</div>
+        <div id="back-to-select-btn" class="menu-btn secondary">ステージ選択へ</div>
+      </div>
+
+      <div id="game-over-menu" class="overlay-screen" style="display: none; background: rgba(50,0,0,0.9);">
+        <div style="color: #f44; font-size: 1.8rem; margin-bottom: 30px; text-shadow: 0 0 10px #f00; font-weight: bold;">
+          GAME OVER
+        </div>
+        <div id="retry-btn" class="menu-btn" style="border-color: #f44; color: #f44;">リトライ</div>
+        <div id="back-to-select-from-over" class="menu-btn secondary">ステージ選択へ</div>
+      </div>
+
+      <div id="game-container"></div>
+      
+    </div> <div class="separator"></div>
 
     <div id="control-panel">
       <div class="status-display" id="status">> READY...</div>
       <div class="magic-btn">魔法</div>
       <div style="font-size: 0.7rem; color: #666; margin-top: 5px;">TAP GRID TO MOVE</div>
     </div>
+
   </div> <script src="js/stage.js"></script>
   <script src="js/levels.js"></script>
   <script src="js/enemy.js"></script>
   <script src="js/game.js"></script>
+
+<script>
+  // ダブルタップによるズームのみを無効化する「副作用なし」版
+  let lastTap = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTap <= 300) {
+      // ダブルタップと判定された場合のみ、ズーム動作をキャンセル
+      e.preventDefault();
+    }
+    // ここで preventDefault しても、1回目のタップ（シングルタップ）の
+    // クリックイベントは邪魔しないので、ボタンは反応します。
+    lastTap = now;
+  }, false);
+</script>
+
 </body>
-</html>
