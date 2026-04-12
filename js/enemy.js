@@ -619,9 +619,16 @@ class Enemy {
     if (!this.isAlive) return;
     this.isAlive = false;
 
-    // ★追加：ボス(Type 'U')の場合、消滅が始まった瞬間にBGMを一旦止める
+    // ★復活：敵が倒れた時のSEを鳴らす
+    // 通常の敵もボスも、まずは「撃破音」を鳴らして手応えを出す
+    if (window.app) {
+      window.app.playSE('maou_se_system19.wav'); // ここに消滅音のファイル名
+    }
+
+    // ★ボス(Type 'U')の場合の制御
     if (this.type === 'U' && window.app && window.app.bossBGM) {
       window.app.bossBGM.pause();
+      // ボスの場合はこの後、Gameクラス側で「5連爆発」などが動くはずです
     }
 
     this.element.style.animation = "none"; 
