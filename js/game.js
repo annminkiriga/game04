@@ -392,7 +392,9 @@ class Game {
 
     // --- ここから差し替え・追記 ---
     const levelData = GAME_LEVELS[this.level] || GAME_LEVELS[1];
-    this.isBossStage = levelData.enemies?.some(e => e.type === 'U') || levelData.enemyType === 'U';
+    // ★修正：U または V がいればボスステージとする
+    this.isBossStage = levelData.enemies?.some(e => e.type === 'U' || e.type === 'V') || 
+                       levelData.enemyType === 'U' || levelData.enemyType === 'V';
     
     // BGMの再生
     // --- ここから演出処理 ---
@@ -424,6 +426,12 @@ class Game {
         const e = new Enemy(this.stage, config.x, config.y, config.type);
         if (config.radius) e.radius = config.radius;
         if (config.noPause) e.noPause = config.noPause; // ★この1行を追加！
+        // ★この1行を追加（スタートする角度を指定できるようにする）
+        if (config.startAngle !== undefined) e.angle = config.startAngle;
+        if (config.startStep !== undefined) e.startStep = config.startStep;
+        // ★ 追加：levels.js から stepMode (移動の滑らかさ) を受け取る
+        if (config.stepMode !== undefined) e.stepMode = config.stepMode;
+        if (e.initPosition) e.initPosition();
         this.enemies.push(e);
       });
     } else if (levelData.enemyType) {
@@ -488,6 +496,7 @@ class Game {
     this.recordPath(0, 0);
 
     this.startTime = Date.now();
+    this.magicCastCount = 0; // ★ここを追加（魔法の使用回数をリセット）
 
     this.stage.container.addEventListener('pointerdown', (e) => {
       // ゲーム開始から0.5秒間は入力を受け付けない（突き抜け防止）
@@ -613,9 +622,19 @@ class Game {
     this.player.style.top = (this.playerPos.y * s + 3) + 'px';
   }
 
-  recordPath(x, y) {
+  // ★引数に delayVisual を追加
+  recordPath(x, y, delayVisual = false) {
     this.pathHistory.push({x, y});
-    this.stage.markAsPassed(x, y);
+
+    // ★追加：trueなら150ミリ秒（移動の中間）で色を変える
+    if (delayVisual) {
+      setTimeout(() => {
+        if (!this.isGameOver) this.stage.markAsPassed(x, y);
+      }, 150);
+    } else {
+      this.stage.markAsPassed(x, y);
+    }
+
     if (this.pathHistory.length >= 5 && !this.isMoving) {
       this.magicBtn.classList.add('active');
     } else {
@@ -643,25 +662,46 @@ class Game {
     const diff = target - this.playerPos[axis];
     if (diff === 0) return;
     const step = diff > 0 ? 1 : -1;
+    
+    // ★ 1マスごとの移動時間（ミリ秒）
+    // 数字を大きくすると遅く、小さくすると速くなります（transitionの0.30sより少し短く）
+    const moveSpeed = 270; 
+
+    // ★ スマホの描画に合わせてカクつきをなくす「滑らかな待機処理」
+    const smoothSleep = (ms) => new Promise(resolve => {
+      const start = performance.now();
+      const loop = (now) => {
+        if (now - start >= ms) resolve();
+        else requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    });
+
     for (let i = 0; i < Math.abs(diff); i++) {
       if (this.isGameOver) break;
       this.playerPos[axis] += step;
       window.app.playSE('maou_se_system10.wav'); 
       this.updatePlayerVisual();
-      this.recordPath(this.playerPos.x, this.playerPos.y);
+      
+      // ★修正：第3引数に true を渡して、マスの色が光るタイミングを遅らせる
+      this.recordPath(this.playerPos.x, this.playerPos.y, true);
+      
       this.checkCollision();
-      await new Promise(r => setTimeout(r, 280)); 
+      await smoothSleep(moveSpeed);
     }
   }
 
   async castMagic() {
     if (this.isMoving || this.isMagicCasting || this.isGameOver || this.pathHistory.length < 2) return;
     this.isMagicCasting = true;
+    
+    this.magicCastCount++; // ★ここを追加（魔法を使った回数をカウント）
+
     this.magicBtn.classList.add('disabled');
     this.player.classList.replace('invincible', 'active');
     
     let defeatedEnemies = [];
-    let bossDamageCount = 0;
+    // let bossDamageCount = 0; ← もう使わないので削除してOKです
 
     for (let i = 0; i < this.pathHistory.length; i++) {
       const pos = this.pathHistory[i];
@@ -676,7 +716,7 @@ class Game {
           const area = enemy.getOccupiedRect();
           if (area.some(p => p.x === pos.x && p.y === pos.y)) {
             const isDown = enemy.applyDamage();
-            bossDamageCount++;
+            // bossDamageCount++; ← 削除します
             if (isDown && !defeatedEnemies.includes(enemy)) defeatedEnemies.push(enemy);
           }
         } else {
@@ -691,8 +731,8 @@ class Game {
       await new Promise(r => setTimeout(r, 60)); 
     }
 
-    // 1. 判定フラグを確定（この行を消すと isOneShot エラーになります）
-    const isOneShot = (defeatedEnemies.length >= 2) || (bossDamageCount >= 3);
+    // ★修正：ボスステージの場合は「1回目の魔法発動で撃破したか」で判定する
+    const isOneShot = (defeatedEnemies.length >= 2) || (this.isBossStage && this.magicCastCount === 1 && defeatedEnemies.length > 0);
 
     if (defeatedEnemies.length > 0) {
       await new Promise(r => setTimeout(r, 200));
@@ -783,17 +823,20 @@ class Game {
 // ★ここから追記！
   startBossSmoothMove() {
     const smoothLoop = () => {
-      if (this.isGameOver) return;
-      
-      // ★修正：魔法詠唱中でなく、かつ「開始演出中でない時」だけ動く
-      if (!this.isMagicCasting && !this.isStarting) {
-        this.enemies.forEach(enemy => {
-          if (enemy.isAlive && enemy.type === 'U') {
-            enemy.move(this.playerPos.x, this.playerPos.y);
-          }
-        });
-      }
-      requestAnimationFrame(smoothLoop);
+        if (this.isGameOver) return;
+        
+        if (!this.isMagicCasting && !this.isStarting) {
+            this.enemies.forEach(enemy => {
+                // ★修正：ボスだけでなく、W(スパイラル) と X(反射) も高速ループで動かす
+                const needsSmoothMove = enemy.isBoss || enemy.type === 'W' || enemy.type === 'X';
+                
+                if (enemy && enemy.isAlive && needsSmoothMove) {
+                    // move()の中で、それぞれのタイプに合った挙動（moveRadialSpiralなど）が実行されます
+                    enemy.move(this.playerPos.x, this.playerPos.y);
+                }
+            });
+        }
+        requestAnimationFrame(smoothLoop);
     };
     requestAnimationFrame(smoothLoop);
   }
