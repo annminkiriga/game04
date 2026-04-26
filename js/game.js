@@ -163,6 +163,28 @@ class App {
       });
     }
 
+  document.getElementById('pause-btn').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  this.pauseGame();
+  });
+
+  document.getElementById('resume-btn').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  this.resumeGame();
+  });
+
+  document.getElementById('pause-retry-btn').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  this.resumeGame(); // 画面を閉じてから
+  this.startGame();  // リスタート
+  });
+
+  document.getElementById('pause-back-btn').addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  this.resumeGame(); // 画面を閉じてから
+  this.showSelectScreen();
+  });
+
     document.getElementById('prev-lv').addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       this.changeLevel(-1);
@@ -362,6 +384,19 @@ class App {
     }
     localStorage.setItem('mp_records', JSON.stringify(records));
   }
+
+  // Appクラスの中に追加
+  pauseGame() {
+    if (!this.currentGame || this.currentGame.isGameOver) return;
+    document.getElementById('pause-menu').style.display = 'flex';
+    this.currentGame.isPaused = true; 
+  }
+
+  resumeGame() {
+    document.getElementById('pause-menu').style.display = 'none';
+    if (this.currentGame) this.currentGame.isPaused = false;
+  }
+
 } // ★★★ ここが抜けていた App クラスの閉じ括弧です ★★★
 
 class Game {
@@ -392,9 +427,11 @@ class Game {
 
     // --- ここから差し替え・追記 ---
     const levelData = GAME_LEVELS[this.level] || GAME_LEVELS[1];
-    // ★修正：U または V がいればボスステージとする
-    this.isBossStage = levelData.enemies?.some(e => e.type === 'U' || e.type === 'V') || 
-                       levelData.enemyType === 'U' || levelData.enemyType === 'V';
+
+    // ★修正：U, V, そして AZ・BZもボスステージとして判定するように追加！
+    // BZ を追加することで、Level 40 が正式にボスステージとして認識されます
+    this.isBossStage = levelData.enemies?.some(e => e.type === 'U' || e.type === 'V' || e.type === 'AZ' || e.type === 'BZ') || 
+                   levelData.enemyType === 'U' || levelData.enemyType === 'V' || levelData.enemyType === 'AZ' || levelData.enemyType === 'BZ';
     
     // BGMの再生
     // --- ここから演出処理 ---
@@ -423,17 +460,20 @@ class Game {
 
     if (levelData.enemies && Array.isArray(levelData.enemies)) {
       levelData.enemies.forEach(config => {
-        const e = new Enemy(this.stage, config.x, config.y, config.type);
-        if (config.radius) e.radius = config.radius;
-        if (config.noPause) e.noPause = config.noPause; // ★この1行を追加！
-        // ★この1行を追加（スタートする角度を指定できるようにする）
-        if (config.startAngle !== undefined) e.angle = config.startAngle;
-        if (config.startStep !== undefined) e.startStep = config.startStep;
-        // ★ 追加：levels.js から stepMode (移動の滑らかさ) を受け取る
-        if (config.stepMode !== undefined) e.stepMode = config.stepMode;
-        if (e.initPosition) e.initPosition();
+        // ★修正：バラバラに渡すのではなく、configごと渡す
+        const e = new Enemy(this.stage, config); 
         this.enemies.push(e);
       });
+    } else if (levelData.enemyType) {
+      // 古い書き方（level 1〜4など）も config 形式に変換して渡す
+      const config = {
+        x: levelData.enemyX,
+        y: levelData.enemyY,
+        type: levelData.enemyType,
+        radius: levelData.radius
+      };
+      const e = new Enemy(this.stage, config);
+      this.enemies.push(e);
     } else if (levelData.enemyType) {
       const e = new Enemy(this.stage, levelData.enemyX, levelData.enemyY, levelData.enemyType);
       if (levelData.radius) e.radius = levelData.radius;
@@ -524,7 +564,12 @@ class Game {
 
   startEnemyAI() {
     const loop = () => {
-      if (this.isGameOver) return;
+      // ★ ここ！ isPaused なら何もしないで次に回す
+      if (this.isGameOver || this.isPaused) { 
+        setTimeout(loop, 100);
+        return;
+      }
+      
       if (this.isMagicCasting) {
         setTimeout(loop, 500);
         return;
@@ -570,10 +615,24 @@ class Game {
   checkCollision() {
     if (this.isGameOver || !this.isMoving) return; 
 
+    const s = CELL_RAW_SIZE + GAP;
+    // プレイヤーの「見た目の中心座標」を計算
+    const pCenterX = this.playerPos.x * s + 2 + (CELL_RAW_SIZE / 2);
+    const pCenterY = this.playerPos.y * s + 2 + (CELL_RAW_SIZE / 2);
+
     const isHit = this.enemies.some(enemy => {
       if (!enemy || !enemy.isAlive) return false;
-      const eGrid = enemy.getGridPos();
-      return (this.playerPos.x === eGrid.x && this.playerPos.y === eGrid.y);
+      
+      // 敵の「現在の中心座標」を計算
+      const eCenterX = enemy.px + (CELL_RAW_SIZE / 2);
+      const eCenterY = enemy.py + (CELL_RAW_SIZE / 2);
+
+      // 物理的な距離を測る（ピクセル単位）
+      const dist = Math.hypot(pCenterX - eCenterX, pCenterY - eCenterY);
+      
+      // 当たり判定のしきい値：1マス(約40px)の 75% くらいにする
+      // これにより、1マス飛び越えてくるような「見た目上の理不尽」が消えます
+      return dist < (CELL_RAW_SIZE * 0.75);
     });
 
     if (isHit) this.gameOver();
@@ -820,18 +879,17 @@ class Game {
   destroy() {
     this.isGameOver = true;
   }
-// ★ここから追記！
+  // ★ここを上書き！ V2を追加しました
   startBossSmoothMove() {
     const smoothLoop = () => {
         if (this.isGameOver) return;
         
-        if (!this.isMagicCasting && !this.isStarting) {
+        if (!this.isMagicCasting && !this.isStarting && !this.isPaused) {
             this.enemies.forEach(enemy => {
-                // ★修正：ボスだけでなく、W(スパイラル) と X(反射) も高速ループで動かす
-                const needsSmoothMove = enemy.isBoss || enemy.type === 'W' || enemy.type === 'X';
+                // enemy.isAlive が false になった瞬間に move を呼ばないように徹底
+                const needsSmoothMove = enemy.isAlive && (enemy.isBoss || ['W', 'X', 'V2', 'B2', 'B3', 'BZ'].includes(enemy.type));
                 
-                if (enemy && enemy.isAlive && needsSmoothMove) {
-                    // move()の中で、それぞれのタイプに合った挙動（moveRadialSpiralなど）が実行されます
+                if (needsSmoothMove) {
                     enemy.move(this.playerPos.x, this.playerPos.y);
                 }
             });

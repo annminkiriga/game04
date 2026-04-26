@@ -97,10 +97,11 @@ const GAME_LEVELS = {
   // ★ 旧12を13へ
   13: {
     enemies: [
-      { x: 2, y: 2, type: 'C' },
-      { x: 6, y: 2, type: 'C' },
-      { x: 2, y: 6, type: 'C' },
-      { x: 6, y: 6, type: 'C' }
+      // ★ それぞれの初期位置を独立した中心(centerX, centerY)とし、1マス分の距離(dist: 1)で回るように設定
+      { x: 2, y: 2, type: 'C', centerX: 2, centerY: 2, dist: 1 },
+      { x: 6, y: 2, type: 'C', centerX: 6, centerY: 2, dist: 1 },
+      { x: 2, y: 6, type: 'C', centerX: 2, centerY: 6, dist: 1 },
+      { x: 6, y: 6, type: 'C', centerX: 6, centerY: 6, dist: 1 }
     ],
     statusMsg: "STAGE 013: QUAD SQUARES"
   },
@@ -150,7 +151,7 @@ const GAME_LEVELS = {
   // ★ STAGE 018 (AとEの混合追尾)
   18: {
     enemies: [
-      { x: 8, y: 0, type: 'A' }, 
+      { x: 8, y: 0, type: 'A', speed: 30 },
       { x: 0, y: 8, type: 'E' }  
     ],
     statusMsg: "STAGE 018: MIXED CHASERS"
@@ -253,16 +254,170 @@ const GAME_LEVELS = {
 
   28: {
     enemies: [
-      { x: 4, y: 3, type: 'C', startStep: 0 }, // 1層：3x3の中心付近を回る
-      { x: 4, y: 2, type: 'Z', startStep: 0 }, // 2層：5x5の範囲を回る
-      { x: 4, y: 1, type: 'C', startStep: 0 }, // 3層：7x7の範囲を回る
-      { x: 4, y: 0, type: 'Z', startStep: 0 }  // 4層：9x9（外周）を回る
+      // x: 1(左から2マス目) ～ 7(左から8マス目) の計7体
+      // y: 1マスずつ階段状にずらして、完全な斜め一列のウェーブを作成
+      { x: 1, y: 8, type: 'H' }, // 1体目（下端）
+      { x: 2, y: 7, type: 'H' }, // 2体目
+      { x: 3, y: 6, type: 'H' }, // 3体目
+      { x: 4, y: 5, type: 'H' }, // 4体目（中央）
+      { x: 5, y: 4, type: 'H' }, // 5体目
+      { x: 6, y: 3, type: 'H' }, // 6体目
+      { x: 7, y: 2, type: 'H' }  // 7体目（上端寄り）
     ],
-    message: "Level 28: Quadruple Layer"
+    statusMsg: "STAGE 028: SEVEN-WAVE"
   },
 
-  // ★ 29：最終ボス（暫定ラスト）
   29: {
+    enemies: [
+      // 外側：直径9マス (半径4マス=160px) / B（時計回り）
+      { x: 4, y: 4, type: 'B', radius: 160, noPause: true },
+      
+      // 中間：直径7マス (半径3マス=120px) / P（反時計回り）
+      { x: 4, y: 4, type: 'P', radius: 120, noPause: true },
+      
+      // 内側：直径5マス (半径2マス=80px) / B（時計回り）
+      { x: 4, y: 4, type: 'B', radius: 80, noPause: true }
+    ],
+    statusMsg: "STAGE 029: TRIPLE RINGS"
+  },
+
+  30: {
+    enemies: [
+      // 上部(4, 1)に配置。突進スピードを少し速め(speed: 25)にしています。
+      { x: 4, y: 1, type: 'AZ', speed: 13 } 
+    ],
+    statusMsg: "STAGE 030: BOOMERANG STRIKE"
+  },
+
+  // levels.js
+
+  31: {
+    enemies: [
+      // 高速スパイラル（F）：radiusを「2」や「3」にすると2倍・3倍の猛スピードになります
+      { x: 0, y: 0, type: 'F', radius: 3 }, 
+      
+      // 横往復（G）：左端からスタートし、画面中央(y=4)を右へ
+      { x: 0, y: 4, type: 'G' },
+      
+      // 縦往復（H）：下端からスタートし、画面中央(x=4)を上へ
+      { x: 4, y: 8, type: 'H' }
+    ],
+    statusMsg: "STAGE 031: FAST SPIRAL & CROSS"
+  },
+
+  32: {
+    enemies: [
+      // 1体目：中心から広がる (radiusを4マスにし、speedを15でゆっくりに)
+      { x: 4, y: 4, type: 'W', radius: 4, startStep: 1, speed: 15 },
+      
+      // 2体目：外側から縮む (同じく大きく、ゆっくりに)
+      { x: 4, y: 4, type: 'W', radius: 4, startStep: 2, startAngle: Math.PI, speed: 15 }
+    ],
+    statusMsg: "STAGE 032: DUAL BREATH"
+  },
+
+  33: {
+    enemies: [
+      // 📝 speedの数値をいろいろ変えて、緊張感とクリアのバランスを探ってみてください！
+      // （指定しなければ自動的にレベルに応じた上限50付近の速度になります）
+      { x: 8, y: 0, type: 'A', speed: 30 }, // 右上
+      { x: 0, y: 8, type: 'A', speed: 30 }, // 左下
+      { x: 8, y: 8, type: 'A', speed: 30 }  // 右下
+    ],
+    statusMsg: "STAGE 033: TRIPLE HUNTERS"
+  },
+
+  34: {
+    enemies: [
+      // N, O (斜め：以前の設定を維持)
+      { x: 0, y: 0, type: 'N' }, { x: 8, y: 8, type: 'N' },
+      { x: 8, y: 0, type: 'O' }, { x: 0, y: 8, type: 'O' },
+
+      // G (横：左右から中心へ)
+      { x: 0, y: 4, type: 'G', sync: 1 },  // 左端から右(1)へ
+      { x: 8, y: 4, type: 'G', sync: -1 }, // 右端から左(-1)へ
+
+      // H (縦：上下から中心へ)
+      { x: 4, y: 0, type: 'H', sync: 1 }, // 上から下へ
+      { x: 4, y: 8, type: 'H' },          // 下から上へ（デフォルト）
+    ],
+    statusMsg: "STAGE 034: CROSS OVER"
+  },
+
+  35: {
+    enemies: [
+      // 1体目：上からスタートして時計回り
+      { x: 4, y: 0, type: 'V2', speed: 30 },
+      // 2体目：下からスタートして時計回り（追いかけっこ状態）
+      { x: 4, y: 8, type: 'V2', speed: 30 }
+    ],
+    statusMsg: "STAGE 035: DIAMOND CIRCLE"
+  },
+
+  36: {
+    enemies: [
+      { x: 4, y: 4, type: 'B2', radius: 4, speed: 15 }, // 縦に大きくゆっくり
+      { x: 4, y: 4, type: 'B3', radius: 4, speed: 15 }  // 横に大きくゆっくり
+    ],
+    statusMsg: "STAGE 036: INFINITY DANCE"
+  },
+
+  37: {
+    enemies: [
+      // 上段：左から右へ波打つ
+      { x: 0, y: 1, type: 'S', speed: 30, noPause: true },
+      // 中段：右から左へ波打つ（中央を陣取る）
+      { x: 8, y: 4, type: 'T', speed: 30, noPause: true },
+      // 下段：左から右へ波打つ
+      { x: 0, y: 7, type: 'S', speed: 30, noPause: true },
+      
+      // 追跡者：プレイヤーをじわじわと追い詰める
+      { x: 8, y: 0, type: 'E', speed: 30 }
+    ],
+    statusMsg: "STAGE 037: WAVE & CHASE"
+  },
+
+  38: {
+    enemies: [
+      { x: 2, y: 2, type: 'W', radius: 1.8, speed: 30, sync: true },
+      { x: 6, y: 2, type: 'W', radius: 1.8, speed: 30, sync: true },
+      { x: 2, y: 6, type: 'W', radius: 1.8, speed: 30, sync: true },
+      { x: 6, y: 6, type: 'W', radius: 1.8, speed: 30, sync: true }
+    ],
+    statusMsg: "STAGE 038: SYNCHRO SPIRAL"
+  },
+
+  39: {
+    enemies: [
+      // 1体目：左上から右下へ
+      { x: 0, y: 0, type: 'I' },
+      
+      // 2体目：右下から左上へ（対角線）
+      { x: 8, y: 8, type: 'I' },
+      
+      // 3体目：中央上端から発進して、左右の壁も使って跳ね回る
+      // 初期位置を中央にすることで、他の2体とは違うリズムを生み出します
+      { x: 4, y: 0, type: 'I' }
+    ],
+    statusMsg: "STAGE 039: TRIPLE BOUNCE"
+  },
+
+  40: {
+    enemies: [
+      { 
+        x: 4, y: 4, // 画面のど真ん中からスタート
+        type: 'BZ', 
+        isBoss: true, 
+        hp: 9, 
+        color: '#FFD700',
+        statusMsg: "BOSS: Z-MASTER" 
+      }
+    ],
+    statusMsg: "STAGE 040: THE Z-MASTER"
+  },
+
+  // ★ 41：最終ボス（暫定ラスト）
+  41: {
     enemies: [
       { x: 4, y: 4, type: 'U' } 
     ],
