@@ -416,11 +416,146 @@ const GAME_LEVELS = {
     statusMsg: "STAGE 040: THE Z-MASTER"
   },
 
-  // ★ 41：最終ボス（暫定ラスト）
+  // ★ Level 41：クアッド・スクエア ＋ センター・サークル
   41: {
     enemies: [
-      { x: 4, y: 4, type: 'U' } 
+      // 四方の正方形移動（Type: C）
+      // 左上：(2,2)を中心に1マス範囲で移動
+      { x: 2, y: 2, type: 'C', centerX: 2, centerY: 2, dist: 1, speed: 30 },
+      // 右上：(6,2)を中心に1マス範囲で移動
+      { x: 6, y: 2, type: 'C', centerX: 6, centerY: 2, dist: 1, speed: 30 },
+      // 左下：(2,6)を中心に1マス範囲で移動
+      { x: 2, y: 6, type: 'C', centerX: 2, centerY: 6, dist: 1, speed: 30 },
+      // 右下：(6,6)を中心に1マス範囲で移動
+      { x: 6, y: 6, type: 'C', centerX: 6, centerY: 6, dist: 1, speed: 30 },
+
+      // 中央の円形移動（Type: B）
+      // 盤面の中心(4,4)を軸に、半径1.5マス分(60px)で回転
+      { x: 4, y: 4, type: 'B', radius: 60, speed: 30, noPause: false }
     ],
-    statusMsg: "STAGE 029: THE FINAL STAR"
+    statusMsg: "STAGE 041: RING IN THE BOX"
+  },
+
+  // ★ Level 42：スター・クロス
+  42: {
+    enemies: [
+      // Level 11：ツイン・スター
+      // 上部の星（J）
+      { x: 4, y: 1, type: 'J', radius: 100 },
+      // 下部の星（K）
+      { x: 4, y: 7, type: 'K', radius: 100 },
+
+      // Level 4：十字ジャンプ
+      // 画面中央付近(4,4)を起点に、上下左右へ2マス分ジャンプ
+      { x: 4, y: 4, type: 'D', startStep: 0 }
+    ],
+    statusMsg: "STAGE 042: STAR CROSS"
+  },
+
+  // ★ Level 43：チェイス＆インフィニティ（旧47）
+  // 40台序盤の壁として、追跡者の処理を学ばせる
+  43: {
+    enemies: [
+      { x: 8, y: 0, type: 'A' },
+      { x: 0, y: 8, type: 'A' },
+      { x: 4, y: 4, type: 'B2', radius: 4, noPause: true },
+      { x: 4, y: 4, type: 'B3', radius: 4, noPause: true }
+    ],
+    statusMsg: "STAGE 043: CHASE & INFINITY"
+  },
+
+  // ★ Level 44：ファイブ・リング ＆ センター・ストリーム
+  44: {
+    enemies: [
+      // Level 15 の配置（止まらないサークル 5体）
+      { x: 3, y: 3, type: 'B', radius: 80, noPause: true },
+      { x: 5, y: 3, type: 'B', radius: 80, noPause: true },
+      { x: 4, y: 4, type: 'B', radius: 80, noPause: true }, 
+      { x: 3, y: 5, type: 'P', radius: 80, noPause: true },
+      { x: 5, y: 5, type: 'P', radius: 80, noPause: true },
+
+      // Level 17 の配置から「上・下」を削除（中段 1本のみ）
+      { x: 0, y: 4, type: 'S', noPause: true } 
+    ],
+    statusMsg: "STAGE 044: CENTER STREAM"
+  },
+
+  // ★ Level 45：ネステッド・ハート（旧46）
+  45: {
+    enemies: [
+      { x: 4, y: 2.2, type: 'Q', radius: 140, noPause: true },
+      { x: 4, y: 2.2, type: 'R', radius: 140, noPause: true },
+      { x: 4, y: 2.2, type: 'Q', radius: 70, noPause: true },
+      { x: 4, y: 2.2, type: 'R', radius: 70, noPause: true }
+    ],
+    statusMsg: "STAGE 045: THE NESTED HEART"
+  },
+
+  // ★ Level 46：カオス・インターセクション（旧45）
+  46: {
+    enemies: [
+      // 4つの円
+      { x: 2.232, y: 2.232, type: 'B', radius: 100, startAngle: Math.PI * 0.25, noPause: true },  
+      { x: 2.232, y: 5.768, type: 'B', radius: 100, startAngle: -Math.PI * 0.25, noPause: true }, 
+      { x: 5.768, y: 2.232, type: 'P', radius: 100, startAngle: Math.PI * 0.75, noPause: true }, 
+      { x: 5.768, y: 5.768, type: 'P', radius: 100, startAngle: -Math.PI * 0.75, noPause: true },
+      // 対角線 4本
+      { x: 0, y: 0, type: 'N', noPause: true },
+      { x: 8, y: 8, type: 'N', noPause: true },
+      { x: 8, y: 0, type: 'O', noPause: true },
+      { x: 0, y: 8, type: 'O', noPause: true }
+    ],
+    statusMsg: "STAGE 046: CHAOTIC INTERSECTION"
+  },
+
+  // ★ Level 47：クアッド・ダイヤモンド（旧43）
+  // 終盤の難所。完全に制御された高速ダイヤモンド包囲網
+  47: {
+    enemies: [
+      { x: 4, y: 0, type: 'V2', speed: 30, startStep: 1 },
+      { x: 8, y: 4, type: 'V2', speed: 30, startStep: 2 },
+      { x: 4, y: 8, type: 'V2', speed: 30, startStep: 3 },
+      { x: 0, y: 4, type: 'V2', speed: 30, startStep: 0 }
+    ],
+    statusMsg: "STAGE 047: QUAD DIAMOND"
+  },
+
+  // ★ Level 48：クアッド・インフィニティ（無限の収束）
+  48: {
+    enemies: [
+      // 縦の8の字 2体（一方が上で膨らむ時、もう一方は下で膨らむ）
+      { x: 4, y: 4, type: 'B2', radius: 4, noPause: true }, 
+      { x: 4, y: 4, type: 'B2', radius: 4, noPause: true, startAngle: Math.PI }, 
+
+      // 横の∞ 2体（一方が右で膨らむ時、もう一方は左で膨らむ）
+      { x: 4, y: 4, type: 'B3', radius: 4, noPause: true }, 
+      { x: 4, y: 4, type: 'B3', radius: 4, noPause: true, startAngle: Math.PI }
+    ],
+    statusMsg: "STAGE 048: QUAD INFINITY"
+  },
+
+  49: {
+    enemies: [
+      { x: 4, y: 4, type: 'B', radius: 150, noPause: true },
+      { x: 4, y: 4, type: 'C', radius: 130, noPause: true },
+      { x: 4, y: 4, type: 'L', radius: 80, speed: 200, noPause: true } // speed:10 でかなりスローになります
+    ],
+    statusMsg: "STAGE 049: GEOMETRIC NEST"
+  },
+
+  // ★ Level 50：THE END OF WORLD（真の最終ステージ）
+  50: {
+    enemies: [
+      { 
+        x: 4, 
+        y: 4, 
+        type: 'CZ', 
+        radius: 80,      // 迫力のサイズ
+        damage: 18, 
+        hp: 150,         // 激闘必至のHP
+        noPause: true    // 逃げ場なし
+      }
+    ],
+    statusMsg: "FINAL STAGE: THE END OF WORLD"
   }
-};
+}; // ここで levels オブジェクトを完全に閉じる

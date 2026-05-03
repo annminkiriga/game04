@@ -56,13 +56,20 @@
     }
 
     #player {
-      position: absolute; width: calc(var(--cell-size) * 0.9); 
-      height: calc(var(--cell-size) * 0.9); z-index: 110;
-      transition: left 0.30s linear, top 0.30s linear;
-      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><path fill="white" d="M259.3 17.8L194 150.2 47.9 171.5c-26.2 3.8-36.7 36.1-17.7 54.6l105.7 103-25 145.5c-4.5 26.3 23.2 46 46.4 33.7L288 439.6l130.7 68.7c23.2 12.2 50.9-7.4 46.4-33.7l-25-145.5 105.7-103c19-18.5 8.5-50.8-17.7-54.6L382 150.2 316.7 17.8c-11.7-23.6-45.6-23.9-57.4 0z"/></svg>');
-      background-size: contain; background-repeat: no-repeat;
-      pointer-events: none; filter: drop-shadow(0 0 5px #fff);
-    }
+  position: absolute; 
+  width: calc(var(--cell-size) * 0.9); 
+  height: calc(var(--cell-size) * 0.9); 
+  
+  /* ★ここを 110 から 5000 に変更！ */
+  z-index: 5000 !important; 
+  
+  transition: left 0.30s linear, top 0.30s linear;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><path fill="white" d="M259.3 17.8L194 150.2 47.9 171.5c-26.2 3.8-36.7 36.1-17.7 54.6l105.7 103-25 145.5c-4.5 26.3 23.2 46 46.4 33.7L288 439.6l130.7 68.7c23.2 12.2 50.9-7.4 46.4-33.7l-25-145.5 105.7-103c19-18.5 8.5-50.8-17.7-54.6L382 150.2 316.7 17.8c-11.7-23.6-45.6-23.9-57.4 0z"/></svg>');
+  background-size: contain; 
+  background-repeat: no-repeat;
+  pointer-events: none; 
+  filter: drop-shadow(0 0 5px #fff);
+}
     #player.invincible { opacity: 0.6; filter: brightness(0.5); transform: scale(0.9); }
     #player.active { filter: brightness(0) invert(1); animation: walking 0.15s infinite alternate linear; }
 
@@ -141,14 +148,42 @@
       pointer-events: none; z-index: 100; 
     }
     #enemy.boss {
-      width: 118px !important; height: 118px !important; font-size: 100px !important;
-      margin-left: -40px !important; margin-top: -40px !important;
-      transition: left 0.05s linear, top 0.05s linear !important;
-    }
+  /* サイズ設定（!importantは一旦外しても大丈夫なはずですが、不安なら残してください） */
+  width: 118px !important; 
+  height: 118px !important; 
+  font-size: 100px !important;
+
+  /* 修正：ネガティブマージンを廃止し、transformで「自身の中心」を軸にする */
+  margin: 0 !important; 
+  transform: translate(-50%, -50%) !important;
+
+  /* 追記：位置計算の基準を左上にするための保険 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  transition: left 0.05s linear, top 0.05s linear !important;
+}
 
     .damage { color: #fff !important; transform: scale(1.2) !important; transition: none !important; }
-    .enemy-die { animation: enemy-die-anim 0.6s ease-in forwards !important; }
-    @keyframes enemy-die-anim { 100% { transform: scale(0) rotate(1440deg); opacity: 0; } }
+    .enemy-die { 
+  animation: enemy-die-anim 0.6s ease-in forwards !important; 
+}
+
+/* ★これを追記：ボスが死ぬ時は scale(0) にリセットさせない */
+#enemy.boss.enemy-die {
+  transform: translate(-50%, -50%) !important; /* 巨大化サイズを固定 */
+  animation: boss-die-anim 0.6s ease-in forwards !important;
+}
+
+    @keyframes enemy-die-anim { 
+  100% { transform: scale(0) rotate(1440deg); opacity: 0; } 
+}
+
+/* ★ボス専用の消滅アニメ（回転と透明化だけにする） */
+@keyframes boss-die-anim {
+  100% { rotate: 1440deg; opacity: 0; }
+}
 
     @keyframes unyo-unyo { 0% { transform: scale(1.1, 0.8); } 100% { transform: scale(0.8, 1.2); } }
     @keyframes walking { 0% { transform: rotate(-15deg); } 100% { transform: rotate(15deg); } }
@@ -162,11 +197,86 @@
     .separator { height: 6px; background: #444; width: 100%; }
     #control-panel { flex: 2; background: #252525; display: flex; flex-direction: column; align-items: center; padding: 15px; }
     .status-display { width: 85%; background: #000; padding: 12px; color: var(--primary-color); border-left: 4px solid var(--primary-color); font-family: monospace; margin-bottom: 10px; }
-    .magic-btn { width: 70px; height: 70px; border-radius: 50%; background: #333; border: 4px solid #555; color: #888; display: flex; justify-content: center; align-items: center; opacity: 0.3; transition: 0.3s; }
+    .magic-btn { 
+  width: 70px; 
+  height: 70px; 
+  border-radius: 50%; 
+  background: #333; 
+  border: 4px solid #555; 
+  color: #888; 
+  display: flex; 
+  justify-content: center; 
+  align-items: center; 
+  opacity: 0.3; 
+  transition: 0.3s; 
+  
+  /* ★ここを追記：最前面に持ってくる設定 */
+  position: relative; 
+  z-index: 10000 !important; /* プレイヤー(5000)よりもさらに手前に */
+}
     .magic-btn.active { opacity: 1; background: radial-gradient(#f00, #500); color: #fff; border-color: #f88; box-shadow: 0 0 20px #f00; }
     
-    #pause-btn { color: #666; border: 1px solid #444; padding: 10px 15px; border-radius: 5px; font-size: 0.8rem; cursor: pointer; }
-  </style>
+    #pause-btn { 
+        color: #666; 
+        border: 1px solid #444; 
+        padding: 10px 15px; 
+        border-radius: 5px; 
+        font-size: 0.8rem; 
+        cursor: pointer; 
+    }
+
+    /* --- エンディング用（修正版） --- */
+.fade-in {
+    animation: fadeIn 2.0s forwards;
+}
+
+.fade-out {
+    animation: fadeOut 1.5s forwards;
+}
+
+@keyframes fadeIn {
+    /* translate(-50%, -50%) を維持したまま、少し下( -45% )から浮かび上がらせる */
+    from { opacity: 0; transform: translate(-50%, -45%); }
+    to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* 前回のフェード用アニメーション */
+    @keyframes fadeOut {
+        from { opacity: 1; transform: translate(-50%, -50%); }
+        to { opacity: 0; transform: translate(-50%, -50%); }
+    }
+
+    /* --- ここから今回の「踊るキャラ用」を追記 --- */
+    
+    /* ふわふわ浮く（ボス用） */
+    .anim-float {
+        animation: endingFloat 3s ease-in-out infinite;
+    }
+    @keyframes endingFloat {
+        0%, 100% { transform: translate(-50%, -50%); }
+        50% { transform: translate(-50%, -70%); }
+    }
+
+    /* 左右に揺れて踊る（プレイヤー用） */
+    .anim-dance {
+        animation: endingDance 0.8s ease-in-out infinite;
+    }
+    @keyframes endingDance {
+        0%, 100% { transform: translate(-50%, -50%) rotate(-10deg); }
+        50% { transform: translate(-50%, -50%) rotate(10deg); }
+    }
+
+    /* ぴょんぴょん跳ねる（ザコ用） */
+    .anim-hop {
+        animation: endingHop 0.5s ease-out infinite;
+    }
+    @keyframes endingHop {
+        0%, 100% { transform: translate(-50%, -50%) scaleY(1); }
+        50% { transform: translate(-50%, -80%) scaleY(0.8); }
+    }
+    /* --- 追記ここまで --- */
+
+</style>
 </head>
 
 <body>
@@ -235,6 +345,7 @@
   <script src="js/levels.js"></script>
   <script src="js/enemy.js"></script>
   <script src="js/game.js"></script>
+  <script src="js/ending.js"></script> <!-- ここに追加！ -->
 
   <script>
     // ズーム阻止ロジック

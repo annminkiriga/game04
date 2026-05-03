@@ -8,11 +8,20 @@
 class App {
   constructor() {
     const savedLv = localStorage.getItem('mp_max_lv');
-    this.maxClearedLevel = parseInt(savedLv) || 1;
+    // 一旦数値として取得
+    let loadedMaxLv = parseInt(savedLv) || 1;
+
+    // ★重要：もし 51 以上の数値が保存されていたら 50 に修正する
+    if (loadedMaxLv > 50) {
+      loadedMaxLv = 50;
+      localStorage.setItem('mp_max_lv', 50); // ストレージの中身も 50 で上書き
+    }
+
+    this.maxClearedLevel = loadedMaxLv;
     this.currentSelectLevel = this.maxClearedLevel;
 
-   // ★追加：全ステージ数を取得（GAME_LEVELS の要素数をカウント）
-    this.totalLevels = Object.keys(GAME_LEVELS).length;
+    // ★修正：最大ステージ数を 50 に固定
+    this.totalLevels = 50;
 
     this.soundPath = 'sounds/'; 
 
@@ -261,17 +270,18 @@ class App {
   }
 
   nextStage() {
-    // ★修正：最終ステージの場合はレベル1に戻してセレクト画面へ（全クリのお祝い）
-    if (this.currentSelectLevel >= this.totalLevels) {
-      alert("ALL STAGE CLEAR!! おめでとうございます！");
-      this.currentSelectLevel = 1;
-      this.showSelectScreen();
-      return;
+    // 50面をクリアした時は、ボタンの onclick が startEnding に
+    // 切り替わっているので、ここには来ないはずですが、
+    // 安全のために通常のカウントアップ処理だけを残します。
+
+    if (this.currentSelectLevel < this.totalLevels) {
+        this.currentSelectLevel++;
+        this.startGame();
+    } else {
+        // もし万が一ここに来てしまったらセレクト画面へ
+        this.showSelectScreen();
     }
-    
-    this.currentSelectLevel++;
-    this.startGame();
-  }
+}
 
   backToTitle() {
     this.stopAllBGM(); 
@@ -339,31 +349,74 @@ class App {
   }
 
   onStageClear(result) {
-    // ★修正：現在のレベルが最大解放レベルと同じ、かつ、まだ全ステージ数に達していない場合のみ次を解放
+    // 1. レベル解放とセーブ（ここは共通）
     if (this.currentSelectLevel === this.maxClearedLevel && this.maxClearedLevel < this.totalLevels) {
         this.maxClearedLevel++;
         localStorage.setItem('mp_max_lv', this.maxClearedLevel);
     }
-    
-    if (result) {
-        this.saveRecord(this.currentSelectLevel, result);
-    }
-    
+    if (result) { this.saveRecord(this.currentSelectLevel, result); }
+
+    // 4秒の余韻の後にボタンを表示
     setTimeout(() => {
-    if (this.clearMenu) {
-      // ★追加：最終ステージをクリアした時は「次のステージへ」ボタンを非表示にする
-      const nextBtn = document.getElementById('next-stage-btn');
-      if (nextBtn) {
-        if (this.currentSelectLevel >= this.totalLevels) {
-          nextBtn.style.display = 'none';
-        } else {
-          nextBtn.style.display = 'block'; // 通常は表示
+        if (!this.clearMenu) return;
+
+        const nextBtn = document.getElementById('next-stage-btn');
+        if (nextBtn) {
+            // 既存のイベントリスナーを一度クリアするためにクローンを作る（念入りな初期化）
+            const newNextBtn = nextBtn.cloneNode(true);
+            nextBtn.parentNode.replaceChild(newNextBtn, nextBtn);
+
+            if (this.currentSelectLevel >= this.totalLevels) {
+                // ★ 50面クリア：エンディング起動ボタンへ改造
+                newNextBtn.innerText = "ＡＬＬ　ＣＬＥＡＲ";
+                newNextBtn.style.display = 'block';
+                newNextBtn.style.color = "#0ff";
+                newNextBtn.style.borderColor = "#0ff";
+                newNextBtn.style.textShadow = "0 0 10px #0ff"; // ラスボス撃破の輝き
+
+                newNextBtn.onclick = (e) => {
+                    console.log("ALL CLEAR CLICKED! To the Ending...");
+                    this.clearMenu.style.display = 'none'; // メニューを消す
+                    this.startEnding(); 
+                };
+            } else {
+                // 通常ステージ：次へ進むボタン
+                newNextBtn.innerText = "次のステージへ";
+                newNextBtn.style.display = 'block';
+                newNextBtn.style.color = "#ff0";
+                newNextBtn.style.borderColor = "#ff0";
+                newNextBtn.onclick = () => { this.nextStage(); };
+            }
         }
-      }
-      this.clearMenu.style.display = 'flex';
+        
+        // メニューを表示
+        this.clearMenu.style.display = 'flex';
+    }, 4000); 
+}
+
+startEnding() {
+    this.isEnding = true;
+
+    // 1. ゲーム画面を消す
+    if (this.divMain) this.divMain.style.display = "none";
+
+    // 2. もしタイトルロゴ（MAGIC PATH）がHTMLに直書きされている場合、
+    //    それも一旦強制的に非表示にする
+    const titleLogo = document.getElementById('ending-title'); // ending.jsで使っているIDに合わせてください
+    if (titleLogo) {
+        titleLogo.style.opacity = "0";
+        titleLogo.style.display = "none";
     }
-  }, 4000);
-  }
+
+    // 3. 画面全体を黒で塗りつぶす（もし背景が透けている場合）
+    document.body.style.backgroundColor = "black";
+
+    setTimeout(() => {
+        if (typeof initEnding === "function") {
+            initEnding(); 
+        }
+    }, 200);
+}
 
   saveRecord(level, result) {
     let records = JSON.parse(localStorage.getItem('mp_records')) || {};
@@ -430,8 +483,8 @@ class Game {
 
     // ★修正：U, V, そして AZ・BZもボスステージとして判定するように追加！
     // BZ を追加することで、Level 40 が正式にボスステージとして認識されます
-    this.isBossStage = levelData.enemies?.some(e => e.type === 'U' || e.type === 'V' || e.type === 'AZ' || e.type === 'BZ') || 
-                   levelData.enemyType === 'U' || levelData.enemyType === 'V' || levelData.enemyType === 'AZ' || levelData.enemyType === 'BZ';
+    this.isBossStage = levelData.enemies?.some(e => e.type === 'U' || e.type === 'V' || e.type === 'AZ' || e.type === 'BZ' || e.type === 'CZ') || 
+                   levelData.enemyType === 'U' || levelData.enemyType === 'V' || levelData.enemyType === 'AZ' || levelData.enemyType === 'BZ' || levelData.enemyType === 'CZ';
     
     // BGMの再生
     // --- ここから演出処理 ---
@@ -630,8 +683,7 @@ class Game {
       // 物理的な距離を測る（ピクセル単位）
       const dist = Math.hypot(pCenterX - eCenterX, pCenterY - eCenterY);
       
-      // 当たり判定のしきい値：1マス(約40px)の 75% くらいにする
-      // これにより、1マス飛び越えてくるような「見た目上の理不尽」が消えます
+      // ★元に戻しました：常に一定の判定サイズ
       return dist < (CELL_RAW_SIZE * 0.75);
     });
 
@@ -771,14 +823,33 @@ class Game {
 
       this.enemies.forEach(enemy => {
         if (!enemy.isAlive) return;
-        if (enemy.isBoss) {
+
+        // ★CZ（ラスボス）の場合：距離で判定し、判定を1.2倍に広げる
+        if (enemy.type === 'CZ') {
+          const s = CELL_RAW_SIZE + GAP;
+          const expCenterX = pos.x * s + (CELL_RAW_SIZE / 2);
+          const expCenterY = pos.y * s + (CELL_RAW_SIZE / 2);
+          const enemyCenterX = enemy.px + (CELL_RAW_SIZE / 2);
+          const enemyCenterY = enemy.py + (CELL_RAW_SIZE / 2);
+
+          const dist = Math.hypot(expCenterX - enemyCenterX, expCenterY - enemyCenterY);
+          
+          // ★ここがポイント！1.2倍のボーナス判定
+          if (dist < enemy.radius * 1.2) {
+            const isDown = enemy.applyDamage();
+            if (isDown && !defeatedEnemies.includes(enemy)) defeatedEnemies.push(enemy);
+          }
+        } 
+        // 他のボス（既存のマス目判定）
+        else if (enemy.isBoss) {
           const area = enemy.getOccupiedRect();
           if (area.some(p => p.x === pos.x && p.y === pos.y)) {
             const isDown = enemy.applyDamage();
-            // bossDamageCount++; ← 削除します
             if (isDown && !defeatedEnemies.includes(enemy)) defeatedEnemies.push(enemy);
           }
-        } else {
+        } 
+        // 雑魚（既存のマス目判定）
+        else {
           const eGrid = enemy.getGridPos();
           if (pos.x === eGrid.x && pos.y === eGrid.y && !defeatedEnemies.includes(enemy)) {
             defeatedEnemies.push(enemy);
@@ -886,8 +957,8 @@ class Game {
         
         if (!this.isMagicCasting && !this.isStarting && !this.isPaused) {
             this.enemies.forEach(enemy => {
-                // enemy.isAlive が false になった瞬間に move を呼ばないように徹底
-                const needsSmoothMove = enemy.isAlive && (enemy.isBoss || ['W', 'X', 'V2', 'B2', 'B3', 'BZ'].includes(enemy.type));
+                // 'CZ' をリストに追加することで、毎フレーム巨大化ロジックが走るようになります
+                const needsSmoothMove = enemy.isAlive && (enemy.isBoss || ['W', 'X', 'V2', 'B2', 'B3', 'BZ', 'CZ'].includes(enemy.type));
                 
                 if (needsSmoothMove) {
                     enemy.move(this.playerPos.x, this.playerPos.y);

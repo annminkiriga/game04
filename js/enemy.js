@@ -36,10 +36,22 @@ class Enemy {
     this.centerX = config.centerX;
     this.centerY = config.centerY;
 
+    // ※ this.type === 'CZ' など個別に指定してもOKですが、包括的にチェックします
+    const bossTypes = ['U', 'V', 'AZ', 'BZ', 'CZ'];
+    if (bossTypes.includes(this.type)) {
+        // levels.js で x, y が指定されていない場合のみ、中心(4)にする
+        if (this.gridX === undefined) this.gridX = 4;
+        if (this.gridY === undefined) this.gridY = 4;
+    }
+
     // --- 座標計算 ---
     const s = CELL_RAW_SIZE + GAP;
-    this.startX = this.gridX * s + 2;
-    this.startY = this.gridY * s + 2;
+    // this.gridX が undefined だと NaN になって出現位置がバグるため、最終ガード
+    const finalX = this.gridX !== undefined ? this.gridX : 4;
+    const finalY = this.gridY !== undefined ? this.gridY : 4;
+
+    this.startX = finalX * s + 2;
+    this.startY = finalY * s + 2;
     this.px = this.startX;
     this.py = this.startY;
 
@@ -49,16 +61,14 @@ class Enemy {
     this.element = this.createEnemy();
     this.isBoss = false;
     // ★ BZ をボスとして追加
-    if (this.type === 'U' || this.type === 'V' || this.type === 'AZ' || this.type === 'BZ') {
-    this.isBoss = true;
-            
-    // ★ HPの設定（Vなら7、AZなら9、それ以外(U)は5）
+    if (this.type === 'U' || this.type === 'V' || this.type === 'AZ' || this.type === 'BZ' || this.type === 'CZ') {
+      this.isBoss = true;
       if (this.type === 'V') this.hp = 7;
       else if (this.type === 'AZ') this.hp = 9;
+      else if (this.type === 'CZ') this.hp = 18; // ラスボスのHP
       else this.hp = 5;
 
       this.element.classList.add('boss');
-      // アイコンを変えたい場合はここで変更可能です（とりあえず今まで通り★にしてあります）
       this.element.innerText = '★'; 
     }
 
@@ -127,8 +137,10 @@ class Enemy {
         this.moveBossBoomerang(playerX, playerY); // ★ここを追加
     } else if (this.type === 'BZ') {
         this.moveBZ();
+    } else if (this.type === 'CZ') { // ★最終ボス用
+        this.moveBossGrow();
     }
-  }
+}
 
   // --- 移動パターン ---
   
@@ -454,13 +466,14 @@ class Enemy {
     this.updateVisual();
   }
 
-  // ★修正：三角形も元の「止まらない仕様」に戻す
+  // ★修正：三角形の速度変更と止まらない仕様に対応
   moveTriangle() {
     if (!this.triPath) {
       this.triPath = [];
       const r = this.radius || 80; 
       const isInverted = (this.type === 'M'); 
       const corners = [];
+
       if (!isInverted) {
         corners.push({ x: this.startX, y: this.startY - r });         
         corners.push({ x: this.startX + r, y: this.startY + r });     
@@ -471,8 +484,16 @@ class Enemy {
         corners.push({ x: this.startX - r, y: this.startY - r });     
       }
 
-      const stepsPerSide = (this.stepMode === 'smooth') ? Math.max(1, Math.round((r * 2) / 40)) : 1;
+      // 速度・分割数の計算
+      let stepsPerSide;
+      if (this.speed) {
+        // speedが小さいほど分割数を増やして遅くする
+        stepsPerSide = Math.max(1, Math.round((r * 20) / this.speed));
+      } else {
+        stepsPerSide = (this.stepMode === 'smooth') ? Math.max(1, Math.round((r * 2) / 40)) : 1;
+      }
 
+      // パスの生成（1回だけでOKです）
       for (let i = 0; i < 3; i++) {
         const start = corners[i];
         const end = corners[(i + 1) % 3];
@@ -486,12 +507,13 @@ class Enemy {
       this.triStep = 0;
     }
 
+    // 移動処理
     const target = this.triPath[this.triStep];
     this.px = target.x;
     this.py = target.y;
     this.triStep = (this.triStep + 1) % this.triPath.length;
 
-    // ★修正：1周した時だけ休む仕様に変更
+    // 1周した時だけ休む（noPauseがtrueなら休まない）
     if (this.triStep === 0 && !this.noPause) {
       this.isPausing = true;
       setTimeout(() => { this.isPausing = false; }, 1000);
@@ -765,7 +787,8 @@ class Enemy {
         { x: cx - r, y: cy     }  // 左 (0, 4)
       ];
       // 現在の座標から一番近い頂点を探すか、0番目からスタート
-      this.diamondStep = 0;
+      // startStepが指定されていればそれを使うように変更
+    this.diamondStep = (this.startStep !== undefined) ? this.startStep : 0;
     }
 
     // 次の目的地
@@ -862,6 +885,51 @@ class Enemy {
     this.updateVisual();
   }
 
+  // 以下のメソッドを enemy.js の下部（他のmove関数が並んでいる場所）に追加
+  moveBossGrow() {
+  if (!this.isAlive) return; // ★これ！死んでいるときは何もしない
+  const growthSpeed = 0.04; // 巨大化速度
+  
+  // 初回実行時の初期化
+  if (this.baseRadius === undefined) {
+    // 既に this.radius に 80 が入っているはずなので、それを baseRadius に同期
+    this.baseRadius = this.radius || 80;
+    this.isBoss = true;
+    
+    // ★重要：初期化の瞬間は巨大化させず、座標だけセットして抜ける
+    this.updateBossElement(); // 描画更新用メソッド（後述）に分離すると楽
+    return; 
+  }
+
+  // 2フレーム目以降：巨大化処理
+  if (this.baseRadius < 160) {
+    this.baseRadius += growthSpeed;
+  }
+  this.radius = this.baseRadius;
+
+  this.updateBossElement();
+}
+
+// 描画処理をメソッド化して、初期化時と更新時で共通化する
+updateBossElement() {
+  const parent = this.stage.container;
+  const cx = parent.clientWidth / 2;
+  const cy = parent.clientHeight / 2;
+
+  this.px = cx;
+  this.py = cy;
+
+  const scale = this.radius / 40;
+  this.element.style.setProperty('position', 'absolute', 'important');
+  this.element.style.setProperty('left', cx + 'px', 'important');
+  this.element.style.setProperty('top', cy + 'px', 'important');
+  this.element.style.setProperty('transform', `translate(-50%, -50%) scale(${scale})`, 'important');
+  this.element.style.setProperty('font-size', (this.radius * 0.8) + 'px', 'important');
+  this.element.style.setProperty('transition', 'none', 'important');
+  this.element.style.setProperty('z-index', '100', 'important');
+  this.element.style.setProperty('opacity', '0.8', 'important');
+}
+
   // --- 共通メソッド ---
 
   moveRandom() {
@@ -881,25 +949,26 @@ class Enemy {
     if (!this.isAlive) return;
     this.isAlive = false;
 
-    // ★追加：物理座標を固定
+    // 動きを止めて音を鳴らす（基本に忠実に）
     this.vx = 0;
     this.vy = 0;
+    if (window.app) window.app.playSE('maou_se_system19.wav');
 
-    // ★最重要：CSSのtransitionを即座に消し、現在の位置に固定する
-    this.element.style.transition = "none";
-    this.element.style.left = this.px + 'px';
-    this.element.style.top = this.py + 'px';
+    // ★変なインラインスタイルや display:none はすべて削除
+    // 単純にクラスを付ける。あとはCSS側に任せる！
+    this.element.classList.add('enemy-die');
+    this.createParticles();
 
-    if (window.app) window.app.playSE('maou_se_system19.wav'); 
-    
-    this.element.style.animation = "none"; 
-    
-    setTimeout(() => { 
-      this.element.classList.add('enemy-die'); 
-      this.createParticles(); 
-    }, 10);
-    setTimeout(() => { if (this.element.parentNode) this.element.remove(); }, 700);
-  }
+    setTimeout(() => {
+        if (this.element && this.element.parentNode) {
+            this.element.remove();
+        }
+        // ボスならクリア表示
+        if (this.isBoss && window.app && window.app.levelClear) {
+            window.app.levelClear();
+        }
+    }, 700);
+}
 
   createParticles() {
     for (let i = 0; i < 8; i++) {
@@ -925,11 +994,22 @@ class Enemy {
   }
 
   getOccupiedRect() {
-    const grid = this.getGridPos();
-    let area = [];
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) area.push({ x: grid.x + dx, y: grid.y + dy });
-    return area;
+  const grid = this.getGridPos();
+  let area = [];
+  
+  if (this.isBoss) {
+    // ボスなら 3x3
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        area.push({ x: grid.x + dx, y: grid.y + dy });
+      }
+    }
+  } else {
+    // ボスじゃない（ザコ）なら、今いる 1マス だけ
+    area.push({ x: grid.x, y: grid.y });
   }
+  return area;
+}
 
   applyDamage() {
     if (!this.isAlive || this.isInvincible) return false;
@@ -943,10 +1023,13 @@ class Enemy {
 
   updateVisual() {
     if (!this.element || !this.isAlive) return;
+    
+    // CZ の場合は moveBossGrow 側で完結させるため、ここでは何もしない
+    if (this.type === 'CZ') return;
 
-    if (this.type === 'X') {
+    if (this.type === 'X'){
       this.element.style.transition = "none";
-    } 
+    }
     // ★ Level 5, 19対策：Eは linear 2s にして「止まり」を解消
     else if (this.type === 'E') {
       this.element.style.transition = "left 2s linear, top 2s linear";
@@ -963,7 +1046,36 @@ class Enemy {
   }
 
   initPosition() {
-    const s = CELL_RAW_SIZE + GAP;
+  if (this.type === 'CZ') {
+    const parent = this.stage.container;
+    const cx = parent.clientWidth / 2;
+    const cy = parent.clientHeight / 2;
+    
+    this.px = cx;
+    this.py = cy;
+
+    // ★ここから追記
+    // 出現した瞬間に moveBossGrow で使う初期サイズを確定させ、
+    // 描画（transform と fontSize）を一度強制的に実行する
+    this.baseRadius = this.radius || 80; 
+    const scale = this.baseRadius / 40;
+
+    this.element.style.setProperty('position', 'absolute', 'important');
+    this.element.style.setProperty('left', cx + 'px', 'important');
+    this.element.style.setProperty('top', cy + 'px', 'important');
+    this.element.style.setProperty('transform', `translate(-50%, -50%) scale(${scale})`, 'important');
+    this.element.style.setProperty('font-size', (this.baseRadius * 0.8) + 'px', 'important');
+    this.element.style.setProperty('transition', 'none', 'important');
+    // ★ここまで
+
+    this.element.style.setProperty('position', 'absolute', 'important');
+    this.element.style.setProperty('left', cx + 'px', 'important');
+    this.element.style.setProperty('top', cy + 'px', 'important');
+    this.element.style.setProperty('transform', 'translate(-50%, -50%) scale(2)', 'important');
+    this.element.style.setProperty('transition', 'none', 'important');
+    this.element.style.setProperty('z-index', '100', 'important');
+    return;
+  }
 
     // ★ CとZの処理をここに統合・修正します
     if (this.type === 'C' || this.type === 'Z') {
@@ -998,7 +1110,10 @@ class Enemy {
       this.spiralStep = (this.startStep === 1) ? this.spiralPath.length - 1 : 0;
       this.spiralDir = (this.startStep === 1) ? -1 : 1;
       const target = this.spiralPath[this.spiralStep];
-      this.px = target.x * s + 2; this.py = target.y * s + 2;
+      // s を CELL_RAW_SIZE + GAP として計算
+      const s = CELL_RAW_SIZE + GAP;
+      this.px = target.x * s + 2; 
+      this.py = target.y * s + 2;
     }
     
     this.updateVisual();
